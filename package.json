@@ -1,0 +1,59 @@
+{
+  "name": "world-chat-desktop",
+  "version": "1.0.0",
+  "description": "World Chat Desktop - Secure encrypted messaging",
+  "main": "dist/main.js",
+  "author": "World",
+  "license": "MIT",
+  "scripts": {
+    "dev": "concurrently \"pnpm run dev:webapp\" \"pnpm run dev:electron\"",
+    "dev:webapp": "cd webapp && pnpm dev",
+    "dev:electron": "wait-on http://localhost:3000 && tsc && electron .",
+    "build": "cd webapp && pnpm build && cd .. && tsc",
+    "package": "pnpm build && electron-builder --mac",
+    "postinstall": "cd webapp && pnpm install"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "concurrently": "^9.0.0",
+    "electron": "^33.0.0",
+    "electron-builder": "^25.0.0",
+    "typescript": "^5.0.0",
+    "wait-on": "^8.0.0"
+  },
+  "build": {
+    "appId": "com.world.chat.desktop",
+    "productName": "World Chat",
+    "directories": {
+      "output": "release"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "worldcoin",
+      "repo": "world-chat-desktop"
+    },
+    "files": [
+      "dist/**/*",
+      "webapp/.next/**/*",
+      "webapp/public/**/*",
+      "webapp/node_modules/**/*",
+      "webapp/package.json"
+    ],
+    "mac": {
+      "category": "public.app-category.social-networking",
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "icon": "assets/icon.icns",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false
+    },
+    "extraMetadata": {
+      "main": "dist/main.js"
+    }
+  },
+  "dependencies": {
+    "electron-updater": "^6.7.3"
+  }
+}
