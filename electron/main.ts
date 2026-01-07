@@ -225,6 +225,13 @@ function setupAutoUpdater() {
       // Silently ignore update check errors
     });
   }, 3000);
+
+  // Check for updates periodically (every 30 minutes)
+  setInterval(() => {
+    autoUpdater.checkForUpdates().catch(() => {
+      // Silently ignore update check errors
+    });
+  }, 30 * 60 * 1000);
 }
 
 // ============================================================================
@@ -296,6 +303,10 @@ app.whenReady().then(() => {
     // macOS: Show hidden window or re-create if needed
     if (mainWindow) {
       mainWindow.show();
+      // Check for updates when window is shown
+      if (app.isPackaged) {
+        autoUpdater.checkForUpdates().catch(() => {});
+      }
     } else if (BrowserWindow.getAllWindows().length === 0) {
       createWindow();
     }
