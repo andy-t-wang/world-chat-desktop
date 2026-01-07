@@ -10,6 +10,7 @@ const PRODUCTION_URL = 'https://world-chat-web.vercel.app';
 
 // State
 let mainWindow: BrowserWindow | null = null;
+let isQuitting = false;
 
 // ============================================================================
 // Single Instance Lock
@@ -249,7 +250,7 @@ async function createWindow() {
 
   // In development, connect to local dev server
   // In production, load the deployed web app
-  const isDev = process.env.NODE_ENV !== 'production' || !app.isPackaged;
+  const isDev = !app.isPackaged;
 
   if (isDev) {
     mainWindow.loadURL(DEV_SERVER_URL);
@@ -257,6 +258,14 @@ async function createWindow() {
   } else {
     mainWindow.loadURL(PRODUCTION_URL);
   }
+
+  // macOS: Hide window instead of closing (like Telegram/Signal)
+  mainWindow.on('close', (event) => {
+    if (process.platform === 'darwin' && !isQuitting) {
+      event.preventDefault();
+      mainWindow?.hide();
+    }
+  });
 
   mainWindow.on('closed', () => {
     mainWindow = null;
@@ -284,13 +293,23 @@ app.whenReady().then(() => {
   setupAutoUpdater();
 
   app.on('activate', () => {
-    // macOS: Re-create window when dock icon is clicked
-    if (BrowserWindow.getAllWindows().length === 0) {
+    // macOS: Show hidden window or re-create if needed
+    if (mainWindow) {
+      mainWindow.show();
+    } else if (BrowserWindow.getAllWindows().length === 0) {
       createWindow();
     }
   });
 });
 
+// macOS: Set quitting flag so close handler knows to actually quit
+app.on('before-quit', () => {
+  isQuitting = true;
+});
+
 app.on('window-all-closed', () => {
-  app.quit();
+  // On macOS, don't quit when all windows closed (app stays in dock)
+  if (process.platform !== 'darwin') {
+    app.quit();
+  }
 });
