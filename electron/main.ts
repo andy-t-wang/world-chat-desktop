@@ -169,7 +169,11 @@ function setupIpcHandlers() {
   });
 
   ipcMain.handle('update:install', () => {
-    autoUpdater.quitAndInstall();
+    // Force quit and install - don't wait for app to close gracefully
+    setImmediate(() => {
+      app.removeAllListeners('window-all-closed');
+      autoUpdater.quitAndInstall(false, true);
+    });
   });
 }
 
