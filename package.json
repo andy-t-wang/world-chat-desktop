@@ -1,6 +1,6 @@
 {
   "name": "world-chat-desktop",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "description": "World Chat Desktop - Secure encrypted messaging",
   "main": "dist/main.js",
   "author": "World",
@@ -47,9 +47,10 @@
         "zip"
       ],
       "icon": "assets/icon.icns",
-      "hardenedRuntime": false,
+      "hardenedRuntime": true,
       "gatekeeperAssess": false,
-      "identity": null
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist"
     },
     "extraMetadata": {
       "main": "dist/main.js"
