@@ -1,6 +1,6 @@
 {
   "name": "world-chat-desktop",
-  "version": "1.3.2",
+  "version": "1.3.3",
   "description": "World Chat Desktop - Secure encrypted messaging",
   "main": "dist/main.js",
   "author": "World",
@@ -47,8 +47,9 @@
         "zip"
       ],
       "icon": "assets/icon.icns",
-      "hardenedRuntime": true,
-      "gatekeeperAssess": false
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false,
+      "identity": null
     },
     "extraMetadata": {
       "main": "dist/main.js"
