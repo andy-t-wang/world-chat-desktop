@@ -169,12 +169,21 @@ function setupIpcHandlers() {
   });
 
   ipcMain.handle('update:install', () => {
-    // Force quit and install - don't wait for app to close gracefully
-    setImmediate(() => {
-      isQuitting = true; // Allow window to close instead of hide
-      app.removeAllListeners('window-all-closed');
-      autoUpdater.quitAndInstall(false, true);
-    });
+    // Force quit and install - destroy window first to avoid macOS hide behavior
+    isQuitting = true;
+
+    // Remove all listeners that might prevent quit
+    app.removeAllListeners('window-all-closed');
+    app.removeAllListeners('before-quit');
+
+    // Destroy the window explicitly (bypass the close handler)
+    if (mainWindow) {
+      mainWindow.destroy();
+      mainWindow = null;
+    }
+
+    // Now quit and install
+    autoUpdater.quitAndInstall(false, true);
   });
 }
 
