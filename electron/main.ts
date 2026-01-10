@@ -171,6 +171,7 @@ function setupIpcHandlers() {
   ipcMain.handle('update:install', () => {
     // Force quit and install - don't wait for app to close gracefully
     setImmediate(() => {
+      isQuitting = true; // Allow window to close instead of hide
       app.removeAllListeners('window-all-closed');
       autoUpdater.quitAndInstall(false, true);
     });
