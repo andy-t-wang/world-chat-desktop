@@ -1,6 +1,6 @@
 {
   "name": "world-chat-desktop",
-  "version": "1.5.4",
+  "version": "1.5.5",
   "description": "World Chat Desktop - Secure encrypted messaging",
   "main": "dist/main.js",
   "author": "World",
@@ -27,14 +27,22 @@
     "directories": {
       "output": "release"
     },
-    "publish": {
-      "provider": "s3",
-      "bucket": "world-chat-distribution",
-      "endpoint": "https://49b69457481a0d6bacbbd10621d19c50.r2.cloudflarestorage.com",
-      "region": "auto",
-      "acl": null,
-      "path": "/"
-    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "andy-t-wang",
+        "repo": "world-chat-desktop",
+        "releaseType": "release"
+      },
+      {
+        "provider": "s3",
+        "bucket": "world-chat-distribution",
+        "endpoint": "https://49b69457481a0d6bacbbd10621d19c50.r2.cloudflarestorage.com",
+        "region": "auto",
+        "acl": null,
+        "path": "/"
+      }
+    ],
     "files": [
       "dist/**/*",
       "webapp/.next/**/*",
