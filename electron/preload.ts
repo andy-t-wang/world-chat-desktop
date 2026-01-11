@@ -85,6 +85,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return ipcRenderer.invoke('app:setBadgeCount', count);
   },
 
+  /** Focus the app window */
+  focusWindow: (): Promise<void> => {
+    return ipcRenderer.invoke('app:focusWindow');
+  },
+
   // =========================================================================
   // Auto-Updater
   // =========================================================================
@@ -140,6 +145,7 @@ declare global {
       getVersion: () => Promise<string>;
       getPlatform: () => Promise<string>;
       setBadgeCount: (count: number) => Promise<void>;
+      focusWindow: () => Promise<void>;
       // Auto-updater
       checkForUpdates: () => Promise<void>;
       downloadUpdate: () => Promise<void>;

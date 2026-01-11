@@ -159,6 +159,17 @@ function setupIpcHandlers() {
     }
   });
 
+  // Focus window (for notification clicks)
+  ipcMain.handle('app:focusWindow', () => {
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) {
+        mainWindow.restore();
+      }
+      mainWindow.show();
+      mainWindow.focus();
+    }
+  });
+
   // Auto-updater IPC handlers
   ipcMain.handle('update:check', () => {
     return autoUpdater.checkForUpdates();
