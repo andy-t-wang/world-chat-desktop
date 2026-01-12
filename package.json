@@ -1,6 +1,6 @@
 {
   "name": "world-chat-desktop",
-  "version": "1.5.13",
+  "version": "1.5.14",
   "description": "World Chat Desktop - Secure encrypted messaging",
   "main": "dist/main.js",
   "author": "World",
