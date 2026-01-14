@@ -269,6 +269,7 @@ async function createWindow() {
     height: 800,
     minWidth: 800,
     minHeight: 600,
+    center: true, // Center window on screen like Signal
     titleBarStyle: 'hiddenInset',
     trafficLightPosition: { x: 16, y: 16 },
     backgroundColor: '#ffffff',
