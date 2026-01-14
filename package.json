@@ -1,6 +1,6 @@
 {
   "name": "world-chat-desktop",
-  "version": "1.5.26",
+  "version": "1.5.27",
   "description": "World Chat Desktop - Secure encrypted messaging",
   "main": "dist/main.js",
   "author": "World",
@@ -70,6 +70,7 @@
     }
   },
   "dependencies": {
-    "electron-updater": "^6.7.3"
+    "electron-updater": "^6.7.3",
+    "recharts": "^3.6.0"
   }
 }
