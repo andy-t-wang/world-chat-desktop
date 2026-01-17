@@ -128,6 +128,49 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onUpdateError: (callback: (error: string) => void): void => {
     ipcRenderer.on('update-error', (_, error) => callback(error));
   },
+
+  // =========================================================================
+  // Translation Service
+  // =========================================================================
+
+  translation: {
+    /** Check if translation is available (only in Electron) */
+    isAvailable: (): Promise<boolean> => {
+      return ipcRenderer.invoke('translation:isAvailable');
+    },
+
+    /** Initialize translation service and download models */
+    initialize: (userLanguage: string): Promise<{ success: boolean; installed: string[] }> => {
+      return ipcRenderer.invoke('translation:initialize', userLanguage);
+    },
+
+    /** Listen for progress updates during initialization */
+    onProgress: (callback: (progress: { progress: number; total: number; message: string }) => void): (() => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, data: { progress: number; total: number; message: string }) => {
+        callback(data);
+      };
+      ipcRenderer.on('translation:progress', handler);
+      // Return cleanup function
+      return () => {
+        ipcRenderer.removeListener('translation:progress', handler);
+      };
+    },
+
+    /** Detect language of text */
+    detectLanguage: (text: string): Promise<{ language: string | null; confidence: number }> => {
+      return ipcRenderer.invoke('translation:detectLanguage', text);
+    },
+
+    /** Translate text from one language to another */
+    translate: (text: string, from: string, to: string): Promise<{ translatedText: string; from: string; to: string }> => {
+      return ipcRenderer.invoke('translation:translate', text, from, to);
+    },
+
+    /** Stop translation service and free memory */
+    dispose: (): Promise<{ success: boolean }> => {
+      return ipcRenderer.invoke('translation:dispose');
+    },
+  },
 });
 
 // TypeScript declaration for window.electronAPI
@@ -154,6 +197,15 @@ declare global {
       onUpdateProgress: (callback: (progress: { percent: number; transferred: number; total: number }) => void) => void;
       onUpdateDownloaded: (callback: (info: { version: string }) => void) => void;
       onUpdateError: (callback: (error: string) => void) => void;
+      // Translation
+      translation: {
+        isAvailable: () => Promise<boolean>;
+        initialize: (userLanguage: string) => Promise<{ success: boolean; installed: string[] }>;
+        onProgress: (callback: (progress: { progress: number; total: number; message: string }) => void) => () => void;
+        detectLanguage: (text: string) => Promise<{ language: string | null; confidence: number }>;
+        translate: (text: string, from: string, to: string) => Promise<{ translatedText: string; from: string; to: string }>;
+        dispose: () => Promise<{ success: boolean }>;
+      };
     };
   }
 }

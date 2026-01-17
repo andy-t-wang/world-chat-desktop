@@ -2,6 +2,7 @@ import { app, BrowserWindow, ipcMain, safeStorage } from 'electron';
 import { autoUpdater } from 'electron-updater';
 import * as path from 'path';
 import * as fs from 'fs';
+import { spawn, ChildProcess } from 'child_process';
 
 // Paths
 const STORAGE_FILE = path.join(app.getPath('userData'), 'secure-storage.enc');
@@ -196,6 +197,51 @@ function setupIpcHandlers() {
     // Now quit and install
     autoUpdater.quitAndInstall(false, true);
   });
+
+  // =========================================================================
+  // Translation Service
+  // =========================================================================
+
+  ipcMain.handle('translation:isAvailable', () => {
+    return true; // Translation is available in Electron
+  });
+
+  ipcMain.handle('translation:initialize', async (_, userLanguage: string) => {
+    try {
+      return await translationService.initialize(userLanguage);
+    } catch (error) {
+      console.error('[Translation] Initialize failed:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('translation:detectLanguage', async (_, text: string) => {
+    try {
+      return await translationService.detectLanguage(text);
+    } catch (error) {
+      console.error('[Translation] Detect language failed:', error);
+      return { language: null, confidence: 0 };
+    }
+  });
+
+  ipcMain.handle('translation:translate', async (_, text: string, from: string, to: string) => {
+    try {
+      return await translationService.translate(text, from, to);
+    } catch (error) {
+      console.error('[Translation] Translate failed:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('translation:dispose', async () => {
+    try {
+      await translationService.stop();
+      return { success: true };
+    } catch (error) {
+      console.error('[Translation] Dispose failed:', error);
+      throw error;
+    }
+  });
 }
 
 // ============================================================================
@@ -258,6 +304,210 @@ function setupAutoUpdater() {
     });
   }, 30 * 60 * 1000);
 }
+
+// ============================================================================
+// Translation Service
+// ============================================================================
+
+class TranslationService {
+  private process: ChildProcess | null = null;
+  private isReady = false;
+  private idleTimeout: NodeJS.Timeout | null = null;
+  private pendingRequests: Map<number, { resolve: (data: unknown) => void; reject: (err: Error) => void }> = new Map();
+  private requestId = 0;
+  private buffer = '';
+
+  /** Spawn the Python translation subprocess */
+  async start(): Promise<void> {
+    if (this.process) return;
+
+    // Find Python executable
+    const pythonPath = process.platform === 'win32' ? 'python' : 'python3';
+    const scriptPath = app.isPackaged
+      ? path.join(process.resourcesPath, 'translation', 'translate.py')
+      : path.join(__dirname, '..', 'resources', 'translation', 'translate.py');
+
+    return new Promise((resolve, reject) => {
+      this.process = spawn(pythonPath, [scriptPath], {
+        stdio: ['pipe', 'pipe', 'pipe'],
+      });
+
+      this.process.stdout?.on('data', (data: Buffer) => {
+        this.buffer += data.toString();
+        this.processBuffer();
+      });
+
+      this.process.stderr?.on('data', (data: Buffer) => {
+        console.error('[Translation] stderr:', data.toString());
+      });
+
+      this.process.on('error', (err) => {
+        console.error('[Translation] Process error:', err);
+        this.cleanup();
+        reject(err);
+      });
+
+      this.process.on('exit', (code) => {
+        console.log('[Translation] Process exited with code:', code);
+        this.cleanup();
+      });
+
+      // Wait for ready signal
+      const timeout = setTimeout(() => {
+        reject(new Error('Translation service startup timeout'));
+      }, 30000);
+
+      const checkReady = () => {
+        if (this.isReady) {
+          clearTimeout(timeout);
+          resolve();
+        } else {
+          setTimeout(checkReady, 100);
+        }
+      };
+      checkReady();
+    });
+  }
+
+  private processBuffer(): void {
+    const lines = this.buffer.split('\n');
+    this.buffer = lines.pop() || ''; // Keep incomplete line in buffer
+
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      try {
+        const data = JSON.parse(line);
+
+        // Check for ready signal
+        if (data.status === 'ready') {
+          this.isReady = true;
+          continue;
+        }
+
+        // Check for progress update - send to renderer
+        if (data.progress !== undefined) {
+          mainWindow?.webContents.send('translation:progress', data);
+          continue;
+        }
+
+        // Route response to pending request (simple sequential model)
+        const [firstKey] = this.pendingRequests.keys();
+        if (firstKey !== undefined) {
+          const pending = this.pendingRequests.get(firstKey);
+          this.pendingRequests.delete(firstKey);
+          if (data.error) {
+            pending?.reject(new Error(data.error));
+          } else {
+            pending?.resolve(data);
+          }
+        }
+      } catch (e) {
+        console.error('[Translation] Failed to parse:', line);
+      }
+    }
+  }
+
+  private cleanup(): void {
+    this.process = null;
+    this.isReady = false;
+    this.buffer = '';
+    // Reject all pending requests
+    for (const [, pending] of this.pendingRequests) {
+      pending.reject(new Error('Translation service terminated'));
+    }
+    this.pendingRequests.clear();
+  }
+
+  /** Send command to subprocess and wait for response */
+  private async sendCommand(cmd: Record<string, unknown>): Promise<unknown> {
+    if (!this.process || !this.isReady) {
+      throw new Error('Translation service not running');
+    }
+
+    // Reset idle timeout
+    this.resetIdleTimeout();
+
+    return new Promise((resolve, reject) => {
+      const id = this.requestId++;
+      this.pendingRequests.set(id, { resolve, reject });
+
+      const timeout = setTimeout(() => {
+        this.pendingRequests.delete(id);
+        reject(new Error('Translation request timeout'));
+      }, 60000);
+
+      this.process?.stdin?.write(JSON.stringify(cmd) + '\n', (err) => {
+        if (err) {
+          clearTimeout(timeout);
+          this.pendingRequests.delete(id);
+          reject(err);
+        }
+      });
+    });
+  }
+
+  /** Initialize translation models */
+  async initialize(userLanguage: string): Promise<{ success: boolean; installed: string[] }> {
+    await this.start();
+    return this.sendCommand({ cmd: 'init', userLanguage }) as Promise<{ success: boolean; installed: string[] }>;
+  }
+
+  /** Detect language of text */
+  async detectLanguage(text: string): Promise<{ language: string | null; confidence: number }> {
+    if (!this.isReady) {
+      return { language: null, confidence: 0 };
+    }
+    return this.sendCommand({ cmd: 'detect', text }) as Promise<{ language: string | null; confidence: number }>;
+  }
+
+  /** Translate text */
+  async translate(text: string, from: string, to: string): Promise<{ translatedText: string; from: string; to: string }> {
+    if (!this.isReady) {
+      throw new Error('Translation service not initialized');
+    }
+    return this.sendCommand({ cmd: 'translate', text, from, to }) as Promise<{ translatedText: string; from: string; to: string }>;
+  }
+
+  /** Stop the translation service */
+  async stop(): Promise<void> {
+    if (this.idleTimeout) {
+      clearTimeout(this.idleTimeout);
+      this.idleTimeout = null;
+    }
+
+    if (this.process && this.isReady) {
+      try {
+        await this.sendCommand({ cmd: 'quit' });
+      } catch {
+        // Ignore errors during shutdown
+      }
+    }
+
+    if (this.process) {
+      this.process.kill();
+      this.cleanup();
+    }
+  }
+
+  /** Reset idle timeout - stop service after 5 minutes of inactivity */
+  private resetIdleTimeout(): void {
+    if (this.idleTimeout) {
+      clearTimeout(this.idleTimeout);
+    }
+    this.idleTimeout = setTimeout(() => {
+      console.log('[Translation] Idle timeout, stopping service');
+      this.stop();
+    }, 5 * 60 * 1000); // 5 minutes
+  }
+
+  /** Check if service is available */
+  isAvailable(): boolean {
+    return this.isReady;
+  }
+}
+
+// Singleton translation service
+const translationService = new TranslationService();
 
 // ============================================================================
 // Window Management
@@ -340,8 +590,10 @@ app.whenReady().then(() => {
 });
 
 // macOS: Set quitting flag so close handler knows to actually quit
-app.on('before-quit', () => {
+app.on('before-quit', async () => {
   isQuitting = true;
+  // Stop translation service
+  await translationService.stop();
 });
 
 app.on('window-all-closed', () => {
