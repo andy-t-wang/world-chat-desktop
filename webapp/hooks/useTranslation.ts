@@ -26,6 +26,7 @@ interface TranslationResult {
   translatedText: string;
   from: string;
   to: string;
+  skipped?: boolean; // True if source and target languages are the same
 }
 
 interface LanguageDetectionResult {
