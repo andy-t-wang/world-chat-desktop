@@ -114,6 +114,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('update-available', (_, info) => callback(info));
   },
 
+  /** Listen for no update available */
+  onUpdateNotAvailable: (callback: () => void): void => {
+    ipcRenderer.on('update-not-available', () => callback());
+  },
+
   /** Listen for download progress */
   onUpdateProgress: (callback: (progress: { percent: number; transferred: number; total: number }) => void): void => {
     ipcRenderer.on('update-progress', (_, progress) => callback(progress));
@@ -219,6 +224,7 @@ declare global {
       downloadUpdate: () => Promise<void>;
       installUpdate: () => Promise<void>;
       onUpdateAvailable: (callback: (info: { version: string; releaseDate: string }) => void) => void;
+      onUpdateNotAvailable: (callback: () => void) => void;
       onUpdateProgress: (callback: (progress: { percent: number; transferred: number; total: number }) => void) => void;
       onUpdateDownloaded: (callback: (info: { version: string }) => void) => void;
       onUpdateError: (callback: (error: string) => void) => void;

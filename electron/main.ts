@@ -450,8 +450,12 @@ function startTranslationProcess(): Promise<void> {
 
     console.log('[Translation] Starting process with system Node.js:', nodePath);
     const cacheDir = path.join(app.getPath('userData'), 'translation-models');
-    const workerPath = path.join(__dirname, 'translation-worker.js');
+    // In packaged app, worker is in app.asar.unpacked/dist/ (extracted from asar)
+    const workerPath = app.isPackaged
+      ? path.join(__dirname.replace('app.asar', 'app.asar.unpacked'), 'translation-worker.js')
+      : path.join(__dirname, 'translation-worker.js');
     console.log('[Translation] Worker path:', workerPath);
+    console.log('[Translation] App is packaged:', app.isPackaged);
     console.log('[Translation] Cache dir:', cacheDir);
 
     // Check if worker file exists
@@ -473,9 +477,19 @@ function startTranslationProcess(): Promise<void> {
     }, 30000);
 
     // Spawn using system Node.js with IPC
+    // In packaged app, node_modules is unpacked to app.asar.unpacked/node_modules
+    const nodeModulesPath = app.isPackaged
+      ? path.join(__dirname.replace('app.asar', 'app.asar.unpacked'), '..', 'node_modules')
+      : path.join(__dirname, '..', 'node_modules');
+    console.log('[Translation] Node modules path:', nodeModulesPath);
+
     translationProcess = spawn(nodePath, [workerPath, cacheDir], {
       stdio: ['pipe', 'pipe', 'pipe', 'ipc'],
-      env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
+      env: {
+        ...process.env,
+        ELECTRON_RUN_AS_NODE: '1',
+        NODE_PATH: nodeModulesPath,
+      },
     });
 
     // Handle stdout (for logs)

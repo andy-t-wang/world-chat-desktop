@@ -24,6 +24,8 @@ import {
   Loader2,
   History,
   Trash2,
+  Download,
+  RotateCcw,
 } from "lucide-react";
 import { useTranslation } from "@/hooks/useTranslation";
 import {
@@ -70,11 +72,15 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
 
   const [version, setVersion] = useState<string | null>(null);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
-  const [isCheckingUpdates, setIsCheckingUpdates] = useState(false);
   const [isElectronEnv, setIsElectronEnv] = useState(false);
   const [linkCopied, setLinkCopied] = useState(false);
   const [translationAvailable, setTranslationAvailable] = useState(false);
   const [isSyncingHistory, setIsSyncingHistory] = useState(false);
+
+  // Update state management
+  const [updateState, setUpdateState] = useState<'idle' | 'checking' | 'available' | 'downloading' | 'downloaded'>('idle');
+  const [updateVersion, setUpdateVersion] = useState<string | null>(null);
+  const [updateProgress, setUpdateProgress] = useState<number>(0);
 
   // Translation hook
   const { isAvailable, initialize, isInitializing, isInitialized, progress: translationProgress, error: translationError, deleteModels } = useTranslation();
@@ -98,6 +104,44 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
     // Check translation availability
     isAvailable().then(setTranslationAvailable);
   }, [isAvailable]);
+
+  // Listen for update events from Electron
+  useEffect(() => {
+    const electronAPI = (window as {
+      electronAPI?: {
+        onUpdateAvailable?: (callback: (info: { version: string }) => void) => void;
+        onUpdateNotAvailable?: (callback: () => void) => void;
+        onUpdateProgress?: (callback: (progress: { percent: number }) => void) => void;
+        onUpdateDownloaded?: (callback: (info: { version: string }) => void) => void;
+        onUpdateError?: (callback: (error: string) => void) => void;
+      };
+    }).electronAPI;
+
+    if (!electronAPI) return;
+
+    electronAPI.onUpdateAvailable?.((info) => {
+      setUpdateState('available');
+      setUpdateVersion(info.version);
+    });
+
+    electronAPI.onUpdateNotAvailable?.(() => {
+      setUpdateState('idle');
+    });
+
+    electronAPI.onUpdateProgress?.((progress) => {
+      setUpdateState('downloading');
+      setUpdateProgress(Math.round(progress.percent));
+    });
+
+    electronAPI.onUpdateDownloaded?.((info) => {
+      setUpdateState('downloaded');
+      setUpdateVersion(info.version);
+    });
+
+    electronAPI.onUpdateError?.(() => {
+      setUpdateState('idle');
+    });
+  }, []);
 
   // Close on Escape key
   useEffect(() => {
@@ -124,20 +168,52 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
     }
   };
 
-  const handleCheckForUpdates = async () => {
-    if (isCheckingUpdates) return;
-    setIsCheckingUpdates(true);
+  const handleUpdateAction = async () => {
+    const electronAPI = (window as {
+      electronAPI?: {
+        checkForUpdates?: () => Promise<void>;
+        downloadUpdate?: () => Promise<void>;
+        installUpdate?: () => Promise<void>;
+      };
+    }).electronAPI;
+
     try {
-      const electronAPI = (window as { electronAPI?: { checkForUpdates?: () => Promise<void> } }).electronAPI;
-      if (electronAPI?.checkForUpdates) {
-        await electronAPI.checkForUpdates();
-        setTimeout(() => setIsCheckingUpdates(false), 2000);
-      } else {
-        window.location.reload();
+      switch (updateState) {
+        case 'idle':
+          if (electronAPI?.checkForUpdates) {
+            setUpdateState('checking');
+            await electronAPI.checkForUpdates();
+            // If no update available, event handler will set state back to idle
+            // Give it a moment then reset if still checking
+            setTimeout(() => {
+              setUpdateState((prev) => prev === 'checking' ? 'idle' : prev);
+            }, 5000);
+          } else {
+            window.location.reload();
+          }
+          break;
+
+        case 'available':
+          if (electronAPI?.downloadUpdate) {
+            setUpdateState('downloading');
+            setUpdateProgress(0);
+            await electronAPI.downloadUpdate();
+          }
+          break;
+
+        case 'downloaded':
+          if (electronAPI?.installUpdate) {
+            await electronAPI.installUpdate();
+          }
+          break;
+
+        default:
+          // checking or downloading - do nothing
+          break;
       }
     } catch (error) {
-      console.error("Check for updates failed:", error);
-      setIsCheckingUpdates(false);
+      console.error("Update action failed:", error);
+      setUpdateState('idle');
     }
   };
 
@@ -435,18 +511,51 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
           </h3>
 
           <button
-            onClick={handleCheckForUpdates}
-            disabled={isCheckingUpdates}
+            onClick={handleUpdateAction}
+            disabled={updateState === 'checking' || updateState === 'downloading'}
             className="w-full flex items-center gap-3 py-3 px-4 hover:bg-[var(--bg-hover)] transition-colors disabled:opacity-50"
           >
-            <RefreshCw className={`w-5 h-5 text-[var(--accent-blue)] ${isCheckingUpdates ? "animate-spin" : ""}`} />
+            {updateState === 'checking' || updateState === 'downloading' ? (
+              <Loader2 className="w-5 h-5 text-[var(--accent-blue)] animate-spin" />
+            ) : updateState === 'available' ? (
+              <Download className="w-5 h-5 text-[var(--accent-blue)]" />
+            ) : updateState === 'downloaded' ? (
+              <RotateCcw className="w-5 h-5 text-[var(--accent-green)]" />
+            ) : (
+              <RefreshCw className="w-5 h-5 text-[var(--accent-blue)]" />
+            )}
             <div className="flex-1 text-left">
               <p className="text-[14px] text-[var(--text-primary)]">
-                {isCheckingUpdates ? "Checking..." : "Check for Updates"}
+                {updateState === 'checking'
+                  ? "Checking..."
+                  : updateState === 'available'
+                  ? `Download Update${updateVersion ? ` (v${updateVersion})` : ""}`
+                  : updateState === 'downloading'
+                  ? `Downloading... ${updateProgress}%`
+                  : updateState === 'downloaded'
+                  ? "Restart to Update"
+                  : "Check for Updates"}
               </p>
               <p className="text-[12px] text-[var(--text-secondary)]">
-                {isElectronEnv ? "Download and install updates" : "Refresh to get latest version"}
+                {updateState === 'downloaded'
+                  ? `Version ${updateVersion} ready to install`
+                  : updateState === 'available'
+                  ? "New version available"
+                  : updateState === 'downloading'
+                  ? "Please wait..."
+                  : isElectronEnv
+                  ? "Download and install updates"
+                  : "Refresh to get latest version"}
               </p>
+              {/* Download progress bar */}
+              {updateState === 'downloading' && (
+                <div className="mt-2 bg-[var(--bg-tertiary)] rounded-full h-1.5 overflow-hidden">
+                  <div
+                    className="h-full bg-[var(--accent-blue)] transition-all duration-300 ease-out"
+                    style={{ width: `${updateProgress}%` }}
+                  />
+                </div>
+              )}
             </div>
           </button>
 

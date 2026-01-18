@@ -1,6 +1,6 @@
 {
   "name": "world-chat-desktop",
-  "version": "1.5.69",
+  "version": "1.5.71",
   "description": "World Chat Desktop - Secure encrypted messaging",
   "main": "dist/main.js",
   "author": "World",
@@ -49,6 +49,14 @@
       "webapp/public/**/*",
       "webapp/node_modules/**/*",
       "webapp/package.json"
+    ],
+    "asarUnpack": [
+      "dist/translation-worker.js",
+      "node_modules/@huggingface/**/*",
+      "node_modules/onnxruntime-node/**/*",
+      "node_modules/.pnpm/@huggingface*/**/*",
+      "node_modules/.pnpm/onnxruntime*/**/*",
+      "node_modules/.pnpm/sharp*/**/*"
     ],
     "artifactName": "${productName}-${version}-${arch}-${os}.${ext}",
     "mac": {
