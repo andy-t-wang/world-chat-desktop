@@ -6,13 +6,13 @@ import { useAtomValue, useSetAtom } from "jotai";
 import { Sidebar, MessagePanel, EmptyState, GroupDetailsPanel, MemberProfilePanel, ResizableDivider } from "@/components/chat";
 import { NewConversationModal } from "@/components/chat/NewConversationModal";
 import { selectedConversationIdAtom } from "@/stores/ui";
-import { clientStateAtom, identityInvalidAtom } from "@/stores/client";
+import { clientStateAtom } from "@/stores/client";
 import { xmtpClientAtom } from "@/stores/client";
 import { useConversationMetadata, useIsMessageRequest } from "@/hooks/useConversations";
 import { useQRXmtpClient } from "@/hooks/useQRXmtpClient";
 import { useDisplayName } from "@/hooks/useDisplayName";
 import { useGroupMemberVerification } from "@/hooks/useGroupMemberVerification";
-import { hasQRSession, clearSession } from "@/lib/auth/session";
+import { hasQRSession } from "@/lib/auth/session";
 import { isElectron } from "@/lib/storage";
 import { setCurrentChatName } from "@/lib/notifications";
 import { streamManager } from "@/lib/xmtp/StreamManager";
@@ -25,7 +25,6 @@ export default function ChatPage() {
   const router = useRouter();
   const clientState = useAtomValue(clientStateAtom);
   const client = useAtomValue(xmtpClientAtom);
-  const identityInvalid = useAtomValue(identityInvalidAtom);
   const { restoreSession } = useQRXmtpClient();
   const selectedId = useAtomValue(selectedConversationIdAtom);
   const setSelectedId = useSetAtom(selectedConversationIdAtom);
@@ -279,16 +278,6 @@ export default function ChatPage() {
     restorationRef.current = true;
     attemptRestore();
   }, [attemptRestore]);
-
-  // Handle identity errors from StreamManager (e.g., "Uninitialized identity")
-  // This means the XMTP identity is corrupted and user needs to re-login
-  useEffect(() => {
-    if (identityInvalid) {
-      console.warn('[ChatPage] Identity is invalid, clearing session and redirecting to login');
-      clearSession();
-      router.push('/');
-    }
-  }, [identityInvalid, router]);
 
   // Show skeleton UI while restoring or initializing (feels faster than spinner)
   if (isRestoring || clientState.isInitializing || !restorationAttempted) {

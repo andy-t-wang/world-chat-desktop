@@ -19,7 +19,6 @@ export {
   currentInboxIdAtom,
   currentAccountIdentifierAtom,
   clientLifecycleAtom,
-  identityInvalidAtom,
 } from './client';
 
 // Message state

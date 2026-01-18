@@ -28,9 +28,6 @@ export const currentInboxIdAtom = atom<string | null>((get) => {
   return client?.inboxId ?? null;
 });
 
-/** Signal that identity is invalid and needs re-authentication */
-export const identityInvalidAtom = atom<boolean>(false);
-
 /** Current user's account identifier from the client */
 export const currentAccountIdentifierAtom = atom((get) => {
   const client = get(xmtpClientAtom);
