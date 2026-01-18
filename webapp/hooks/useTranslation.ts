@@ -13,6 +13,14 @@ const TRANSLATION_CACHE_PREFIX = "translation-cache-";
 // localStorage prefix for original text cache (for outgoing translated messages)
 const ORIGINAL_TEXT_CACHE_PREFIX = "original-text-cache-";
 
+// Session-only cache for disappearing message conversations (in-memory, clears on refresh)
+const sessionOriginalTextCache = new Map<string, string>();
+
+// Key format for session cache
+function getSessionCacheKey(conversationId: string, translatedContent: string): string {
+  return `${conversationId}:${translatedContent}`;
+}
+
 interface TranslationResult {
   translatedText: string;
   from: string;
@@ -322,11 +330,21 @@ export function useTranslation() {
   /**
    * Get cached original text for an outgoing translated message
    * Returns null if not cached
+   * Pass checkSessionCache=true to also check in-memory session cache (for disappearing messages)
    */
   const getCachedOriginal = useCallback((
     conversationId: string,
-    translatedContent: string
+    translatedContent: string,
+    checkSessionCache: boolean = false
   ): string | null => {
+    // First check session cache if requested (for disappearing messages)
+    if (checkSessionCache) {
+      const sessionKey = getSessionCacheKey(conversationId, translatedContent);
+      const sessionCached = sessionOriginalTextCache.get(sessionKey);
+      if (sessionCached) return sessionCached;
+    }
+
+    // Then check localStorage (for normal conversations)
     try {
       const key = ORIGINAL_TEXT_CACHE_PREFIX + conversationId;
       const stored = localStorage.getItem(key);
@@ -341,15 +359,21 @@ export function useTranslation() {
   /**
    * Cache original text for an outgoing translated message
    * Keyed by translated content so we can look it up when rendering
-   * Pass skipCache=true for disappearing message conversations
+   * Pass useSessionOnly=true for disappearing message conversations (in-memory only)
    */
   const cacheOriginal = useCallback((
     conversationId: string,
     translatedContent: string,
     originalText: string,
-    skipCache: boolean = false
+    useSessionOnly: boolean = false
   ): void => {
-    if (skipCache) return; // Don't cache for disappearing message conversations
+    if (useSessionOnly) {
+      // For disappearing messages: use in-memory session cache only
+      const key = getSessionCacheKey(conversationId, translatedContent);
+      sessionOriginalTextCache.set(key, originalText);
+      return;
+    }
+    // Normal conversations: persist to localStorage
     try {
       const key = ORIGINAL_TEXT_CACHE_PREFIX + conversationId;
       const stored = localStorage.getItem(key);

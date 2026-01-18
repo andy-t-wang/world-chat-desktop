@@ -3009,7 +3009,7 @@ export function MessagePanel({
                                 isLastInGroup={isLastInGroup}
                                 isVerified={isVerified}
                                 translatedContent={translations[item.id]}
-                                originalText={isOwnMessage && !hasDisappearingMessages ? getCachedOriginal(conversationId, replyText) ?? undefined : undefined}
+                                originalText={isOwnMessage ? getCachedOriginal(conversationId, replyText, hasDisappearingMessages) ?? undefined : undefined}
                                 reactions={
                                   <MessageReactions
                                     messageId={item.id}
@@ -3162,7 +3162,7 @@ export function MessagePanel({
                             >
                               <MessageText text={text} isOwnMessage={true} onMentionClick={handleMentionClick} />
                               {/* Show translation or original text for outgoing messages */}
-                              {!hasDisappearingMessages && (() => {
+                              {(() => {
                                 // First check for on-demand translation (clicked translate button)
                                 const onDemandTranslation = translations[item.id];
                                 if (onDemandTranslation) {
@@ -3175,7 +3175,8 @@ export function MessagePanel({
                                   );
                                 }
                                 // Otherwise show cached original text (from when you sent a translated message)
-                                const originalText = getCachedOriginal(conversationId, text);
+                                // Pass hasDisappearingMessages to check session cache for disappearing convos
+                                const originalText = getCachedOriginal(conversationId, text, hasDisappearingMessages);
                                 if (!originalText) return null;
                                 return (
                                   <div className="mt-1.5 pt-1.5 border-t border-white/20">
