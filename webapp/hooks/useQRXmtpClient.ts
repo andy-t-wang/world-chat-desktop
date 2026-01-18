@@ -13,7 +13,7 @@ import {
   acquireTabLock,
   releaseTabLock,
 } from "@/lib/tab-lock";
-import { getSessionCache, setSessionCache, isElectron } from "@/lib/storage";
+import { getSessionCache, setSessionCache, isElectron, deleteXmtpDatabase } from "@/lib/storage";
 
 // Module cache for faster subsequent loads
 let cachedModules: Awaited<ReturnType<typeof loadAllModules>> | null = null;
@@ -188,8 +188,12 @@ export function useQRXmtpClient(): UseQRXmtpClientResult {
         const verifyMsg = verifyError instanceof Error ? verifyError.message : String(verifyError);
         console.error('[QRXmtpClient] Identity verification failed:', verifyMsg);
         if (verifyMsg.includes('Uninitialized identity') || verifyMsg.includes('register_identity')) {
-          console.error('[QRXmtpClient] Identity not registered, clearing session for re-login');
+          console.error('[QRXmtpClient] Identity not registered, clearing database and session for re-login');
           releaseTabLock();
+          // Delete the OPFS database to prevent orphan installations from accumulating
+          if (cachedSession.inboxId) {
+            await deleteXmtpDatabase(cachedSession.inboxId);
+          }
           clearSession();
           dispatch({ type: "INIT_ERROR", error: new Error("Identity registration incomplete. Please login again.") });
           return false;

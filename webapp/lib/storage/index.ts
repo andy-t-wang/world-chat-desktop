@@ -104,6 +104,31 @@ export async function clearSessionCache(): Promise<void> {
 // ============================================================================
 
 /**
+ * Delete XMTP OPFS database for a given inboxId
+ * Call this when identity is uninitialized to prevent orphan installations
+ */
+export async function deleteXmtpDatabase(inboxId: string): Promise<boolean> {
+  if (typeof window === 'undefined') return false;
+
+  try {
+    // XMTP uses OPFS with file pattern: xmtp-{environment}-{inbox-id}.db3
+    const root = await navigator.storage.getDirectory();
+    const dbName = `xmtp-production-${inboxId}.db3`;
+
+    console.log('[Storage] Attempting to delete XMTP database:', dbName);
+
+    // Try to remove the file
+    await root.removeEntry(dbName);
+    console.log('[Storage] Successfully deleted XMTP database:', dbName);
+    return true;
+  } catch (error) {
+    // File might not exist or other error
+    console.warn('[Storage] Failed to delete XMTP database:', error);
+    return false;
+  }
+}
+
+/**
  * Quick synchronous check if there's likely a session
  * In Electron, returns false since we need async IPC - use getSessionCache() instead
  * Use getSessionCache() for accurate async check
