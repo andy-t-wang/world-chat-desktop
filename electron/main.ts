@@ -1,8 +1,8 @@
 import { app, BrowserWindow, ipcMain, safeStorage } from 'electron';
+import { ChildProcess, spawn } from 'child_process';
 import { autoUpdater } from 'electron-updater';
 import * as path from 'path';
 import * as fs from 'fs';
-import { spawn, ChildProcess } from 'child_process';
 
 // Paths
 const STORAGE_FILE = path.join(app.getPath('userData'), 'secure-storage.enc');
@@ -46,6 +46,7 @@ interface SecureData {
   };
   connected?: boolean;
   customNicknames?: Record<string, string>;
+  translationEnabled?: boolean;
 }
 
 let storageCache: SecureData | null = null;
@@ -199,34 +200,65 @@ function setupIpcHandlers() {
   });
 
   // =========================================================================
-  // Translation Service
+  // Translation Service (Utility Process)
   // =========================================================================
 
   ipcMain.handle('translation:isAvailable', () => {
-    return true; // Translation is available in Electron
+    return true; // Translation is available in Electron desktop
   });
 
-  ipcMain.handle('translation:initialize', async (_, userLanguage: string) => {
+  ipcMain.handle('translation:isReady', async () => {
+    if (!translationProcess) return false;
     try {
-      return await translationService.initialize(userLanguage);
+      return await sendToWorker<boolean>('isReady');
+    } catch {
+      return false;
+    }
+  });
+
+  ipcMain.handle('translation:initialize', async () => {
+    try {
+      translationInitializing = true;
+      lastTranslationProgress = null;
+      // Start the utility process if not running
+      await startTranslationProcess();
+      // Initialize the translation model in the worker
+      const result = await sendToWorker<{ success: boolean }>('initialize');
+      translationReady = true;
+      translationInitializing = false;
+      lastTranslationProgress = null;
+      // Save enabled preference on successful initialization
+      setSecureData({ translationEnabled: true });
+      return result;
     } catch (error) {
       console.error('[Translation] Initialize failed:', error);
+      translationInitializing = false;
+      lastTranslationProgress = null;
       throw error;
     }
   });
 
-  ipcMain.handle('translation:detectLanguage', async (_, text: string) => {
-    try {
-      return await translationService.detectLanguage(text);
-    } catch (error) {
-      console.error('[Translation] Detect language failed:', error);
-      return { language: null, confidence: 0 };
-    }
+  ipcMain.handle('translation:getProgress', () => {
+    return {
+      isInitializing: translationInitializing,
+      progress: lastTranslationProgress,
+    };
+  });
+
+  ipcMain.handle('translation:detectLanguage', async () => {
+    // Language detection not implemented - user specifies source language
+    return { language: null, confidence: 0 };
   });
 
   ipcMain.handle('translation:translate', async (_, text: string, from: string, to: string) => {
     try {
-      return await translationService.translate(text, from, to);
+      if (!translationProcess || !translationReady) {
+        throw new Error('Translation service not initialized');
+      }
+      return await sendToWorker<{ translatedText: string; from: string; to: string }>(
+        'translate',
+        { text, from, to }
+      );
     } catch (error) {
       console.error('[Translation] Translate failed:', error);
       throw error;
@@ -235,10 +267,62 @@ function setupIpcHandlers() {
 
   ipcMain.handle('translation:dispose', async () => {
     try {
-      await translationService.stop();
+      if (translationProcess) {
+        await sendToWorker('dispose');
+        stopTranslationProcess();
+      }
+      translationReady = false;
+      // Clear the enabled preference when disposing
+      setSecureData({ translationEnabled: false });
       return { success: true };
     } catch (error) {
       console.error('[Translation] Dispose failed:', error);
+      // Force stop even if dispose fails
+      stopTranslationProcess();
+      setSecureData({ translationEnabled: false });
+      return { success: true };
+    }
+  });
+
+  ipcMain.handle('translation:getEnabled', () => {
+    const data = getSecureData();
+    return data.translationEnabled ?? false;
+  });
+
+  ipcMain.handle('translation:setEnabled', (_, enabled: boolean) => {
+    setSecureData({ translationEnabled: enabled });
+  });
+
+  ipcMain.handle('translation:deleteModels', async () => {
+    try {
+      // Stop the translation process if running
+      if (translationProcess) {
+        try {
+          await sendToWorker('dispose');
+        } catch {
+          // Ignore errors during dispose
+        }
+        stopTranslationProcess();
+      }
+      translationReady = false;
+
+      // Clear the enabled preference
+      setSecureData({ translationEnabled: false });
+
+      // Delete the translation models directory
+      const cacheDir = path.join(app.getPath('userData'), 'translation-models');
+      const fs = await import('fs/promises');
+      try {
+        await fs.rm(cacheDir, { recursive: true, force: true });
+        console.log('[Translation] Deleted models directory:', cacheDir);
+      } catch (err) {
+        console.error('[Translation] Failed to delete models:', err);
+        // Don't throw - the directory might not exist
+      }
+
+      return { success: true };
+    } catch (error) {
+      console.error('[Translation] Delete models failed:', error);
       throw error;
     }
   });
@@ -306,208 +390,162 @@ function setupAutoUpdater() {
 }
 
 // ============================================================================
-// Translation Service
+// Translation Service (System Node.js Process)
 // ============================================================================
 
-class TranslationService {
-  private process: ChildProcess | null = null;
-  private isReady = false;
-  private idleTimeout: NodeJS.Timeout | null = null;
-  private pendingRequests: Map<number, { resolve: (data: unknown) => void; reject: (err: Error) => void }> = new Map();
-  private requestId = 0;
-  private buffer = '';
+let translationProcess: ChildProcess | null = null;
+let pendingRequests = new Map<string, { resolve: (value: unknown) => void; reject: (error: Error) => void }>();
+let requestId = 0;
+let translationReady = false;
+let translationInitializing = false;
+let lastTranslationProgress: { status: string; progress: number; file?: string } | null = null;
+let messageBuffer = '';
 
-  /** Spawn the Python translation subprocess */
-  async start(): Promise<void> {
-    if (this.process) return;
+// Find system Node.js (not Electron's)
+function findSystemNode(): string | null {
+  const { execSync } = require('child_process');
+  const possiblePaths = [
+    '/opt/homebrew/bin/node',  // macOS ARM Homebrew
+    '/usr/local/bin/node',     // macOS Intel Homebrew
+    '/usr/bin/node',           // Linux system
+  ];
 
-    // Find Python executable
-    const pythonPath = process.platform === 'win32' ? 'python' : 'python3';
-    const scriptPath = app.isPackaged
-      ? path.join(process.resourcesPath, 'translation', 'translate.py')
-      : path.join(__dirname, '..', 'resources', 'translation', 'translate.py');
-
-    return new Promise((resolve, reject) => {
-      this.process = spawn(pythonPath, [scriptPath], {
-        stdio: ['pipe', 'pipe', 'pipe'],
-      });
-
-      this.process.stdout?.on('data', (data: Buffer) => {
-        this.buffer += data.toString();
-        this.processBuffer();
-      });
-
-      this.process.stderr?.on('data', (data: Buffer) => {
-        console.error('[Translation] stderr:', data.toString());
-      });
-
-      this.process.on('error', (err) => {
-        console.error('[Translation] Process error:', err);
-        this.cleanup();
-        reject(err);
-      });
-
-      this.process.on('exit', (code) => {
-        console.log('[Translation] Process exited with code:', code);
-        this.cleanup();
-      });
-
-      // Wait for ready signal
-      const timeout = setTimeout(() => {
-        reject(new Error('Translation service startup timeout'));
-      }, 30000);
-
-      const checkReady = () => {
-        if (this.isReady) {
-          clearTimeout(timeout);
-          resolve();
-        } else {
-          setTimeout(checkReady, 100);
-        }
-      };
-      checkReady();
-    });
+  // Try 'which node' first
+  try {
+    const nodePath = execSync('which node', { encoding: 'utf8' }).trim();
+    if (nodePath && !nodePath.includes('Electron')) {
+      return nodePath;
+    }
+  } catch {
+    // Ignore
   }
 
-  private processBuffer(): void {
-    const lines = this.buffer.split('\n');
-    this.buffer = lines.pop() || ''; // Keep incomplete line in buffer
-
-    for (const line of lines) {
-      if (!line.trim()) continue;
-      try {
-        const data = JSON.parse(line);
-
-        // Check for ready signal
-        if (data.status === 'ready') {
-          this.isReady = true;
-          continue;
-        }
-
-        // Check for progress update - send to renderer
-        if (data.progress !== undefined) {
-          mainWindow?.webContents.send('translation:progress', data);
-          continue;
-        }
-
-        // Route response to pending request (simple sequential model)
-        const [firstKey] = this.pendingRequests.keys();
-        if (firstKey !== undefined) {
-          const pending = this.pendingRequests.get(firstKey);
-          this.pendingRequests.delete(firstKey);
-          if (data.error) {
-            pending?.reject(new Error(data.error));
-          } else {
-            pending?.resolve(data);
-          }
-        }
-      } catch (e) {
-        console.error('[Translation] Failed to parse:', line);
-      }
+  // Try common paths
+  for (const p of possiblePaths) {
+    if (fs.existsSync(p)) {
+      return p;
     }
   }
 
-  private cleanup(): void {
-    this.process = null;
-    this.isReady = false;
-    this.buffer = '';
-    // Reject all pending requests
-    for (const [, pending] of this.pendingRequests) {
-      pending.reject(new Error('Translation service terminated'));
-    }
-    this.pendingRequests.clear();
-  }
-
-  /** Send command to subprocess and wait for response */
-  private async sendCommand(cmd: Record<string, unknown>): Promise<unknown> {
-    if (!this.process || !this.isReady) {
-      throw new Error('Translation service not running');
-    }
-
-    // Reset idle timeout
-    this.resetIdleTimeout();
-
-    return new Promise((resolve, reject) => {
-      const id = this.requestId++;
-      this.pendingRequests.set(id, { resolve, reject });
-
-      const timeout = setTimeout(() => {
-        this.pendingRequests.delete(id);
-        reject(new Error('Translation request timeout'));
-      }, 60000);
-
-      this.process?.stdin?.write(JSON.stringify(cmd) + '\n', (err) => {
-        if (err) {
-          clearTimeout(timeout);
-          this.pendingRequests.delete(id);
-          reject(err);
-        }
-      });
-    });
-  }
-
-  /** Initialize translation models */
-  async initialize(userLanguage: string): Promise<{ success: boolean; installed: string[] }> {
-    await this.start();
-    return this.sendCommand({ cmd: 'init', userLanguage }) as Promise<{ success: boolean; installed: string[] }>;
-  }
-
-  /** Detect language of text */
-  async detectLanguage(text: string): Promise<{ language: string | null; confidence: number }> {
-    if (!this.isReady) {
-      return { language: null, confidence: 0 };
-    }
-    return this.sendCommand({ cmd: 'detect', text }) as Promise<{ language: string | null; confidence: number }>;
-  }
-
-  /** Translate text */
-  async translate(text: string, from: string, to: string): Promise<{ translatedText: string; from: string; to: string }> {
-    if (!this.isReady) {
-      throw new Error('Translation service not initialized');
-    }
-    return this.sendCommand({ cmd: 'translate', text, from, to }) as Promise<{ translatedText: string; from: string; to: string }>;
-  }
-
-  /** Stop the translation service */
-  async stop(): Promise<void> {
-    if (this.idleTimeout) {
-      clearTimeout(this.idleTimeout);
-      this.idleTimeout = null;
-    }
-
-    if (this.process && this.isReady) {
-      try {
-        await this.sendCommand({ cmd: 'quit' });
-      } catch {
-        // Ignore errors during shutdown
-      }
-    }
-
-    if (this.process) {
-      this.process.kill();
-      this.cleanup();
-    }
-  }
-
-  /** Reset idle timeout - stop service after 5 minutes of inactivity */
-  private resetIdleTimeout(): void {
-    if (this.idleTimeout) {
-      clearTimeout(this.idleTimeout);
-    }
-    this.idleTimeout = setTimeout(() => {
-      console.log('[Translation] Idle timeout, stopping service');
-      this.stop();
-    }, 5 * 60 * 1000); // 5 minutes
-  }
-
-  /** Check if service is available */
-  isAvailable(): boolean {
-    return this.isReady;
-  }
+  return null;
 }
 
-// Singleton translation service
-const translationService = new TranslationService();
+function startTranslationProcess(): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (translationProcess) {
+      resolve();
+      return;
+    }
+
+    const nodePath = findSystemNode();
+    if (!nodePath) {
+      reject(new Error('System Node.js not found. Please install Node.js.'));
+      return;
+    }
+
+    console.log('[Translation] Starting process with system Node.js:', nodePath);
+    const cacheDir = path.join(app.getPath('userData'), 'translation-models');
+    const workerPath = path.join(__dirname, 'translation-worker.js');
+
+    // Spawn using system Node.js with IPC
+    translationProcess = spawn(nodePath, [workerPath, cacheDir], {
+      stdio: ['pipe', 'pipe', 'pipe', 'ipc'],
+      env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
+    });
+
+    // Handle stdout (for logs)
+    translationProcess.stdout?.on('data', (data) => {
+      console.log('[TranslationWorker]', data.toString().trim());
+    });
+
+    // Handle stderr
+    translationProcess.stderr?.on('data', (data) => {
+      console.error('[TranslationWorker Error]', data.toString().trim());
+    });
+
+    // Handle IPC messages
+    translationProcess.on('message', (msg: { id?: string; type: string; payload?: unknown }) => {
+      if (msg.type === 'ready') {
+        console.log('[Translation] Process ready');
+        resolve();
+        return;
+      }
+
+      if (msg.type === 'progress') {
+        lastTranslationProgress = msg.payload as { status: string; progress: number; file?: string };
+        mainWindow?.webContents.send('translation:progress', msg.payload);
+        return;
+      }
+
+      if (msg.id && (msg.type === 'result' || msg.type === 'error')) {
+        const pending = pendingRequests.get(msg.id);
+        if (pending) {
+          if (msg.type === 'error') {
+            pending.reject(new Error(msg.payload as string));
+          } else {
+            pending.resolve(msg.payload);
+          }
+          pendingRequests.delete(msg.id);
+        }
+      }
+    });
+
+    translationProcess.on('exit', (code) => {
+      console.log('[Translation] Process exited with code:', code);
+      translationProcess = null;
+      translationReady = false;
+      for (const [id, { reject: rej }] of pendingRequests) {
+        rej(new Error('Translation process exited'));
+        pendingRequests.delete(id);
+      }
+    });
+
+    translationProcess.on('error', (error) => {
+      console.error('[Translation] Process error:', error);
+      reject(error);
+    });
+
+    // Timeout
+    setTimeout(() => {
+      if (translationProcess && !translationReady) {
+        // Don't reject if we're still initializing the model
+      }
+    }, 10000);
+  });
+}
+
+function sendToWorker<T>(type: string, payload?: unknown): Promise<T> {
+  return new Promise((resolve, reject) => {
+    if (!translationProcess) {
+      reject(new Error('Translation process not running'));
+      return;
+    }
+
+    const id = String(++requestId);
+    pendingRequests.set(id, {
+      resolve: resolve as (value: unknown) => void,
+      reject
+    });
+    translationProcess.send({ id, type, payload });
+
+    const timeout = type === 'initialize' ? 300000 : 60000; // 5min for init, 1min for translate
+    setTimeout(() => {
+      if (pendingRequests.has(id)) {
+        pendingRequests.delete(id);
+        reject(new Error(`Translation request timed out: ${type}`));
+      }
+    }, timeout);
+  });
+}
+
+function stopTranslationProcess(): void {
+  if (translationProcess) {
+    console.log('[Translation] Stopping process...');
+    translationProcess.kill();
+    translationProcess = null;
+    translationReady = false;
+  }
+}
 
 // ============================================================================
 // Window Management
@@ -590,10 +628,10 @@ app.whenReady().then(() => {
 });
 
 // macOS: Set quitting flag so close handler knows to actually quit
-app.on('before-quit', async () => {
+app.on('before-quit', () => {
   isQuitting = true;
-  // Stop translation service
-  await translationService.stop();
+  // Stop translation utility process
+  stopTranslationProcess();
 });
 
 app.on('window-all-closed', () => {

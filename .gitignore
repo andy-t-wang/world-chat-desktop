@@ -7,6 +7,10 @@ release/
 *.dmg
 *.zip
 
+# Webapp (Next.js)
+webapp/node_modules/
+webapp/.next/
+
 # OS files
 .DS_Store
 Thumbs.db

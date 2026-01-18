@@ -1,0 +1,717 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "World App Username API",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RootResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health": {
+      "get": {
+        "description": "Health check."
+      }
+    },
+    "/api/v1/ens": {
+      "post": {
+        "description": "CCIP Read Gateway powering the ENS integration.",
+        "requestBody": {
+          "content": {
+            "application/octet-stream": {}
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ENSResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ENSErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ens/": {
+      "post": {
+        "description": "CCIP Read Gateway powering the ENS integration.",
+        "requestBody": {
+          "content": {
+            "application/octet-stream": {}
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ENSResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ENSErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ens/{sender}/{data}": {
+      "get": {
+        "description": "CCIP Read Gateway powering the ENS integration.",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ENSResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ENSErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/query": {
+      "post": {
+        "description": "Resolve multiple addresses or usernames into their registered username records.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QueryMultiplePayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/UsernameRecord"
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "There were too many items",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponseSchema"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/avatar/{name}": {
+      "get": {
+        "description": "Redirect to the user's avatar, optionally falling back to a default. The fallback URL must be from a whitelisted domain specified in the WHITELISTED_AVATAR_DOMAINS environment variable.",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "fallback",
+            "description": "The URL to redirect to if the username is not found or does not have a profile picture URL.",
+            "schema": {
+              "description": "The URL to redirect to if the username is not found or does not have a profile picture URL.",
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "uri"
+            },
+            "style": "form"
+          },
+          {
+            "in": "query",
+            "name": "minimized",
+            "description": "Whether to return the minimized version of the profile picture. Defaults to false.",
+            "schema": {
+              "description": "Whether to return the minimized version of the profile picture. Defaults to false.",
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "style": "form"
+          }
+        ],
+        "responses": {
+          "301": {
+            "description": "A redirect to the user's avatar or the fallback avatar (if from a whitelisted domain)."
+          },
+          "403": {
+            "description": "Returned when the fallback URL's domain is not whitelisted or when fallback URLs are not allowed (whitelist not configured).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponseSchema"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Returned when the user has no avatar and a fallback image is not provided.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponseSchema"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/rename": {
+      "post": {
+        "description": "Change your World App username to a new one.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RenamePayload"
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    },
+    "/api/v1/register": {
+      "post": {
+        "description": "Register a World App username with World ID.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterUsernamePayload"
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    },
+    "/api/v1/{name}": {
+      "get": {
+        "description": "Resolve a single username or address.",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsernameRecord"
+                }
+              }
+            }
+          },
+          "301": {
+            "description": "A redirect to the new username, if the queries username has recently changed."
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponseSchema"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "description": "Update the details attached to a World App username.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateUsernamePayload"
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    },
+    "/api/v1/search/{username}": {
+      "get": {
+        "description": "Search for up to 10 usernames. Accepts 1 to 14, only valid username characters to search with.",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/UsernameRecord"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/profile-picture": {
+      "delete": {
+        "description": "Delete a user-uploaded profile picture and revert it to the default marble image.",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "address",
+            "description": "The user's wallet address.",
+            "required": true,
+            "schema": {
+              "description": "The user's wallet address.",
+              "type": "string"
+            },
+            "style": "form"
+          },
+          {
+            "in": "query",
+            "name": "merkle_root",
+            "description": "0x-prefixed hex string of the World ID merkle root.",
+            "required": true,
+            "schema": {
+              "description": "0x-prefixed hex string of the World ID merkle root.",
+              "type": "string"
+            },
+            "style": "form"
+          },
+          {
+            "in": "query",
+            "name": "nullifier_hash",
+            "description": "0x-prefixed hex string of the World ID nullifier hash.",
+            "required": true,
+            "schema": {
+              "description": "0x-prefixed hex string of the World ID nullifier hash.",
+              "type": "string"
+            },
+            "style": "form"
+          },
+          {
+            "in": "query",
+            "name": "proof",
+            "description": "0x-prefixed hex string of the World ID proof.",
+            "required": true,
+            "schema": {
+              "description": "0x-prefixed hex string of the World ID proof.",
+              "type": "string"
+            },
+            "style": "form"
+          },
+          {
+            "in": "query",
+            "name": "verification_level",
+            "description": "World ID verification level the user holds.",
+            "required": true,
+            "schema": {
+              "description": "World ID verification level the user holds.",
+              "$ref": "#/components/schemas/VerificationLevel"
+            },
+            "style": "form"
+          }
+        ]
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Address": {
+        "type": "string",
+        "pattern": "^0x[a-fA-F0-9]{40}$"
+      },
+      "AppVersion": {
+        "type": "object",
+        "required": [
+          "compile_time",
+          "semver"
+        ],
+        "properties": {
+          "compile_time": {
+            "description": "The time the application was compiled at",
+            "type": "string"
+          },
+          "rev": {
+            "description": "Commit hash of the current build (if available)",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "semver": {
+            "description": "Current version of the application",
+            "type": "string"
+          }
+        }
+      },
+      "AvatarQueryParams": {
+        "type": "object",
+        "properties": {
+          "fallback": {
+            "description": "The URL to redirect to if the username is not found or does not have a profile picture URL.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uri"
+          },
+          "minimized": {
+            "description": "Whether to return the minimized version of the profile picture. Defaults to false.",
+            "type": [
+              "boolean",
+              "null"
+            ]
+          }
+        }
+      },
+      "DeleteProfilePicturePayload": {
+        "type": "object",
+        "required": [
+          "address",
+          "merkle_root",
+          "nullifier_hash",
+          "proof",
+          "verification_level"
+        ],
+        "properties": {
+          "address": {
+            "description": "The user's wallet address.",
+            "type": "string"
+          },
+          "merkle_root": {
+            "description": "0x-prefixed hex string of the World ID merkle root.",
+            "type": "string"
+          },
+          "nullifier_hash": {
+            "description": "0x-prefixed hex string of the World ID nullifier hash.",
+            "type": "string"
+          },
+          "proof": {
+            "description": "0x-prefixed hex string of the World ID proof.",
+            "type": "string"
+          },
+          "verification_level": {
+            "description": "World ID verification level the user holds.",
+            "$ref": "#/components/schemas/VerificationLevel"
+          }
+        }
+      },
+      "ENSErrorResponse": {
+        "type": "object",
+        "required": [
+          "message"
+        ],
+        "properties": {
+          "message": {
+            "description": "A human-readable error message.",
+            "type": "string"
+          }
+        }
+      },
+      "ENSResponse": {
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "properties": {
+          "data": {
+            "description": "0x-prefixed hex string containing the result data.",
+            "type": "string"
+          }
+        }
+      },
+      "ErrorResponseSchema": {
+        "type": "object",
+        "required": [
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "type": "string"
+          }
+        }
+      },
+      "QueryMultiplePayload": {
+        "type": "object",
+        "properties": {
+          "addresses": {
+            "description": "A list of addresses to resolve.",
+            "default": [],
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Address"
+            }
+          },
+          "usernames": {
+            "description": "List of usernames to resolve.",
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "RegisterUsernamePayload": {
+        "type": "object",
+        "required": [
+          "address",
+          "merkle_root",
+          "nullifier_hash",
+          "proof",
+          "username",
+          "verification_level"
+        ],
+        "properties": {
+          "address": {
+            "description": "The user's wallet address.",
+            "$ref": "#/components/schemas/Address"
+          },
+          "merkle_root": {
+            "description": "0x-prefixed hex string of the World ID merkle root.",
+            "type": "string"
+          },
+          "minimized_profile_picture_url": {
+            "description": "The user's minimized profile picture URL.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uri"
+          },
+          "nullifier_hash": {
+            "description": "0x-prefixed hex string of the World ID nullifier hash.",
+            "type": "string"
+          },
+          "profile_picture_url": {
+            "description": "The user's profile picture URL.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uri"
+          },
+          "proof": {
+            "description": "0x-prefixed hex string of the World ID proof.",
+            "type": "string"
+          },
+          "username": {
+            "description": "The requested username.",
+            "type": "string"
+          },
+          "verification_level": {
+            "description": "World ID verification level the user holds.",
+            "$ref": "#/components/schemas/VerificationLevel"
+          }
+        }
+      },
+      "RenamePayload": {
+        "type": "object",
+        "required": [
+          "merkle_root",
+          "new_username",
+          "nullifier_hash",
+          "old_username",
+          "proof",
+          "verification_level"
+        ],
+        "properties": {
+          "merkle_root": {
+            "description": "0x-prefixed hex string of the World ID merkle root.",
+            "type": "string"
+          },
+          "new_username": {
+            "description": "The username to migrate to.",
+            "type": "string"
+          },
+          "nullifier_hash": {
+            "description": "0x-prefixed hex string of the World ID nullifier hash.",
+            "type": "string"
+          },
+          "old_username": {
+            "description": "The username to migrate from.",
+            "type": "string"
+          },
+          "proof": {
+            "description": "0x-prefixed hex string of the World ID proof.",
+            "type": "string"
+          },
+          "verification_level": {
+            "description": "World ID verification level the user holds.",
+            "$ref": "#/components/schemas/VerificationLevel"
+          }
+        }
+      },
+      "RootResponse": {
+        "type": "object",
+        "required": [
+          "docs_url",
+          "openapi_url",
+          "version"
+        ],
+        "properties": {
+          "docs_url": {
+            "description": "Relative URL to Swagger UI",
+            "type": "string"
+          },
+          "openapi_url": {
+            "description": "Relative URL to `OpenAPI` specification",
+            "type": "string"
+          },
+          "version": {
+            "description": "Application version",
+            "$ref": "#/components/schemas/AppVersion"
+          }
+        }
+      },
+      "UpdateUsernamePayload": {
+        "type": "object",
+        "required": [
+          "address",
+          "merkle_root",
+          "nullifier_hash",
+          "proof",
+          "verification_level"
+        ],
+        "properties": {
+          "address": {
+            "description": "The username's new wallet address.",
+            "$ref": "#/components/schemas/Address"
+          },
+          "merkle_root": {
+            "description": "0x-prefixed hex string of the World ID merkle root.",
+            "type": "string"
+          },
+          "minimized_profile_picture_url": {
+            "description": "The username's new minimized profile picture URL. If not provided, the existing minimized profile picture URL will be deleted.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uri"
+          },
+          "nullifier_hash": {
+            "description": "0x-prefixed hex string of the World ID nullifier hash.",
+            "type": "string"
+          },
+          "profile_picture_url": {
+            "description": "The username's new profile picture URL. If not provided, the exixting profile picture URL will be deleted.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uri"
+          },
+          "proof": {
+            "description": "0x-prefixed hex string of the World ID proof.",
+            "type": "string"
+          },
+          "verification_level": {
+            "description": "World ID verification level the user holds.",
+            "$ref": "#/components/schemas/VerificationLevel"
+          }
+        }
+      },
+      "UsernameRecord": {
+        "type": "object",
+        "required": [
+          "address",
+          "username"
+        ],
+        "properties": {
+          "address": {
+            "description": "Checksummed wallet address of the user.",
+            "$ref": "#/components/schemas/Address"
+          },
+          "minimized_profile_picture_url": {
+            "description": "URL to the user's minimized profile picture.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uri"
+          },
+          "profile_picture_url": {
+            "description": "URL to the user's profile picture.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uri"
+          },
+          "username": {
+            "description": "The user's World App username.",
+            "type": "string"
+          }
+        }
+      },
+      "VerificationLevel": {
+        "type": "string",
+        "enum": [
+          "orb",
+          "device"
+        ]
+      }
+    }
+  }
+}

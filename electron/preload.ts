@@ -130,23 +130,28 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
 
   // =========================================================================
-  // Translation Service
+  // Translation Service (Transformers.js + NLLB)
   // =========================================================================
 
   translation: {
-    /** Check if translation is available (only in Electron) */
+    /** Check if translation is available (only in Electron desktop) */
     isAvailable: (): Promise<boolean> => {
       return ipcRenderer.invoke('translation:isAvailable');
     },
 
-    /** Initialize translation service and download models */
-    initialize: (userLanguage: string): Promise<{ success: boolean; installed: string[] }> => {
-      return ipcRenderer.invoke('translation:initialize', userLanguage);
+    /** Check if translation models are loaded and ready */
+    isReady: (): Promise<boolean> => {
+      return ipcRenderer.invoke('translation:isReady');
     },
 
-    /** Listen for progress updates during initialization */
-    onProgress: (callback: (progress: { progress: number; total: number; message: string }) => void): (() => void) => {
-      const handler = (_event: Electron.IpcRendererEvent, data: { progress: number; total: number; message: string }) => {
+    /** Initialize translation service and download models (~150MB) */
+    initialize: (): Promise<{ success: boolean }> => {
+      return ipcRenderer.invoke('translation:initialize');
+    },
+
+    /** Listen for progress updates during model download */
+    onProgress: (callback: (progress: { status: string; progress: number; file?: string }) => void): (() => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, data: { status: string; progress: number; file?: string }) => {
         callback(data);
       };
       ipcRenderer.on('translation:progress', handler);
@@ -169,6 +174,26 @@ contextBridge.exposeInMainWorld('electronAPI', {
     /** Stop translation service and free memory */
     dispose: (): Promise<{ success: boolean }> => {
       return ipcRenderer.invoke('translation:dispose');
+    },
+
+    /** Get whether translation was enabled (persisted preference) */
+    getEnabled: (): Promise<boolean> => {
+      return ipcRenderer.invoke('translation:getEnabled');
+    },
+
+    /** Set whether translation is enabled (persisted preference) */
+    setEnabled: (enabled: boolean): Promise<void> => {
+      return ipcRenderer.invoke('translation:setEnabled', enabled);
+    },
+
+    /** Delete downloaded translation models to free disk space */
+    deleteModels: (): Promise<{ success: boolean }> => {
+      return ipcRenderer.invoke('translation:deleteModels');
+    },
+
+    /** Get current progress state (for re-mounting components) */
+    getProgress: (): Promise<{ isInitializing: boolean; progress: { status: string; progress: number; file?: string } | null }> => {
+      return ipcRenderer.invoke('translation:getProgress');
     },
   },
 });
@@ -197,14 +222,19 @@ declare global {
       onUpdateProgress: (callback: (progress: { percent: number; transferred: number; total: number }) => void) => void;
       onUpdateDownloaded: (callback: (info: { version: string }) => void) => void;
       onUpdateError: (callback: (error: string) => void) => void;
-      // Translation
+      // Translation (Transformers.js + NLLB)
       translation: {
         isAvailable: () => Promise<boolean>;
-        initialize: (userLanguage: string) => Promise<{ success: boolean; installed: string[] }>;
-        onProgress: (callback: (progress: { progress: number; total: number; message: string }) => void) => () => void;
+        isReady: () => Promise<boolean>;
+        initialize: () => Promise<{ success: boolean }>;
+        onProgress: (callback: (progress: { status: string; progress: number; file?: string }) => void) => () => void;
         detectLanguage: (text: string) => Promise<{ language: string | null; confidence: number }>;
         translate: (text: string, from: string, to: string) => Promise<{ translatedText: string; from: string; to: string }>;
         dispose: () => Promise<{ success: boolean }>;
+        getEnabled: () => Promise<boolean>;
+        setEnabled: (enabled: boolean) => Promise<void>;
+        deleteModels: () => Promise<{ success: boolean }>;
+        getProgress: () => Promise<{ isInitializing: boolean; progress: { status: string; progress: number; file?: string } | null }>;
       };
     };
   }
