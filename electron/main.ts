@@ -219,7 +219,10 @@ function setupIpcHandlers() {
   ipcMain.handle('translation:initialize', async () => {
     try {
       translationInitializing = true;
-      lastTranslationProgress = null;
+      // Send immediate "starting" progress so UI doesn't show 0% stuck
+      lastTranslationProgress = { status: 'starting', progress: 1, file: '' };
+      mainWindow?.webContents.send('translation:progress', lastTranslationProgress);
+      console.log('[Translation] Starting initialization...');
       // Start the utility process if not running
       await startTranslationProcess();
       // Initialize the translation model in the worker
@@ -433,12 +436,14 @@ function findSystemNode(): string | null {
 function startTranslationProcess(): Promise<void> {
   return new Promise((resolve, reject) => {
     if (translationProcess) {
+      console.log('[Translation] Process already running');
       resolve();
       return;
     }
 
     const nodePath = findSystemNode();
     if (!nodePath) {
+      console.error('[Translation] System Node.js not found!');
       reject(new Error('System Node.js not found. Please install Node.js.'));
       return;
     }
@@ -446,6 +451,26 @@ function startTranslationProcess(): Promise<void> {
     console.log('[Translation] Starting process with system Node.js:', nodePath);
     const cacheDir = path.join(app.getPath('userData'), 'translation-models');
     const workerPath = path.join(__dirname, 'translation-worker.js');
+    console.log('[Translation] Worker path:', workerPath);
+    console.log('[Translation] Cache dir:', cacheDir);
+
+    // Check if worker file exists
+    const fs = require('fs');
+    if (!fs.existsSync(workerPath)) {
+      console.error('[Translation] Worker file not found at:', workerPath);
+      reject(new Error('Translation worker file not found'));
+      return;
+    }
+
+    // Add startup timeout - if worker doesn't respond in 30 seconds, fail
+    const startupTimeout = setTimeout(() => {
+      console.error('[Translation] Worker startup timeout - no ready message received');
+      if (translationProcess && !translationReady) {
+        translationProcess.kill();
+        translationProcess = null;
+      }
+      reject(new Error('Translation worker startup timeout'));
+    }, 30000);
 
     // Spawn using system Node.js with IPC
     translationProcess = spawn(nodePath, [workerPath, cacheDir], {
@@ -467,12 +492,15 @@ function startTranslationProcess(): Promise<void> {
     translationProcess.on('message', (msg: { id?: string; type: string; payload?: unknown }) => {
       if (msg.type === 'ready') {
         console.log('[Translation] Process ready');
+        clearTimeout(startupTimeout);
         resolve();
         return;
       }
 
       if (msg.type === 'progress') {
-        lastTranslationProgress = msg.payload as { status: string; progress: number; file?: string };
+        const progressPayload = msg.payload as { status: string; progress: number; file?: string };
+        console.log('[Translation] Progress:', progressPayload.progress + '%', progressPayload.status, progressPayload.file || '');
+        lastTranslationProgress = progressPayload;
         mainWindow?.webContents.send('translation:progress', msg.payload);
         return;
       }
@@ -501,16 +529,10 @@ function startTranslationProcess(): Promise<void> {
     });
 
     translationProcess.on('error', (error) => {
+      clearTimeout(startupTimeout);
       console.error('[Translation] Process error:', error);
       reject(error);
     });
-
-    // Timeout
-    setTimeout(() => {
-      if (translationProcess && !translationReady) {
-        // Don't reject if we're still initializing the model
-      }
-    }, 10000);
   });
 }
 

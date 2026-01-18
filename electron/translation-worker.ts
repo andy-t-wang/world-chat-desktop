@@ -80,6 +80,16 @@ process.on('message', async (msg: WorkerMessage) => {
         isInitializing = true;
         console.log('[TranslationWorker] Initializing NLLB model...');
 
+        // Send immediate progress so UI doesn't show 0% stuck
+        send({
+          type: 'progress',
+          payload: {
+            status: 'loading',
+            progress: 2,
+            file: 'Preparing model...',
+          },
+        });
+
         translator = await pipeline(
           'translation',
           'Xenova/nllb-200-distilled-600M',
