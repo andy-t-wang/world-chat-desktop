@@ -19,6 +19,8 @@ interface ReplyBubbleProps {
   isVerified?: boolean;
   /** Translated text to show below original (only for incoming) */
   translatedContent?: string;
+  /** Original text for outgoing translated messages */
+  originalText?: string;
   /** Reactions component to render (positioned for correct overlap) */
   reactions?: React.ReactNode;
 }
@@ -32,6 +34,7 @@ export function ReplyBubble({
   isLastInGroup,
   isVerified = false,
   translatedContent,
+  originalText,
   reactions,
 }: ReplyBubbleProps) {
   const { displayName } = useUsername(quotedSenderAddress);
@@ -98,10 +101,19 @@ export function ReplyBubble({
         <p className={`text-[15px] leading-[1.3] break-words ${textColor} ${isOwnMessage ? 'opacity-90' : ''}`}>
           {replyContent}
         </p>
+        {/* Show translation for incoming messages */}
         {translatedContent && !isOwnMessage && (
           <div className="mt-1.5 pt-1.5 border-t border-[rgba(0,0,0,0.08)]">
             <p className="text-[15px] text-[var(--text-secondary)] italic leading-[1.4]">
               {translatedContent}
+            </p>
+          </div>
+        )}
+        {/* Show original text for outgoing translated messages */}
+        {originalText && isOwnMessage && (
+          <div className="mt-1.5 pt-1.5 border-t border-white/20">
+            <p className="text-[15px] text-white/70 italic leading-[1.4]">
+              {originalText}
             </p>
           </div>
         )}

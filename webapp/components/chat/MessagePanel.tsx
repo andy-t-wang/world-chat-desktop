@@ -556,6 +556,27 @@ function MessageWrapper({
       {/* Action buttons - left side for outgoing messages */}
       {isOwnMessage && (
         <div className="flex items-center gap-0.5 opacity-0 group-hover/msg:opacity-100 transition-opacity">
+          {/* Translate button for outgoing messages */}
+          {translationEnabled && (
+            <button
+              onClick={handleTranslateClick}
+              disabled={isTranslating}
+              className={`w-7 h-7 flex items-center justify-center rounded-full transition-colors shrink-0 ${
+                isTranslated
+                  ? "text-[var(--accent-blue)] hover:bg-[var(--bg-hover)]"
+                  : isTranslating
+                  ? "text-[var(--text-quaternary)] cursor-wait"
+                  : "hover:bg-[var(--bg-hover)] text-[var(--text-quaternary)] hover:text-[var(--text-primary)]"
+              }`}
+              title={isTranslated ? "Hide translation" : isTranslating ? "Translating..." : "Translate"}
+            >
+              {isTranslating ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Languages className="w-4 h-4" />
+              )}
+            </button>
+          )}
           <button
             onClick={handleReplyClick}
             className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-[var(--bg-hover)] text-[var(--text-quaternary)] hover:text-[var(--text-primary)] transition-colors shrink-0"
@@ -2988,6 +3009,7 @@ export function MessagePanel({
                                 isLastInGroup={isLastInGroup}
                                 isVerified={isVerified}
                                 translatedContent={translations[item.id]}
+                                originalText={isOwnMessage && !hasDisappearingMessages ? getCachedOriginal(conversationId, replyText) ?? undefined : undefined}
                                 reactions={
                                   <MessageReactions
                                     messageId={item.id}
@@ -3126,6 +3148,10 @@ export function MessagePanel({
                           messageId={item.id}
                           onReactionClick={handleReactionButtonClick}
                           onReplyClick={handleQuickReply}
+                          onTranslateClick={(id) => handleTranslateClick(id, text)}
+                          isTranslated={!!translations[item.id]}
+                          isTranslating={translatingIds.has(item.id)}
+                          translationEnabled={translationEnabled}
                         >
                           <div className="max-w-[300px]">
                             <div
@@ -3135,8 +3161,20 @@ export function MessagePanel({
                               }
                             >
                               <MessageText text={text} isOwnMessage={true} onMentionClick={handleMentionClick} />
-                              {/* Show original text for translated outgoing messages (skip for disappearing) */}
+                              {/* Show translation or original text for outgoing messages */}
                               {!hasDisappearingMessages && (() => {
+                                // First check for on-demand translation (clicked translate button)
+                                const onDemandTranslation = translations[item.id];
+                                if (onDemandTranslation) {
+                                  return (
+                                    <div className="mt-1.5 pt-1.5 border-t border-white/20">
+                                      <p className="text-[15px] text-white/70 italic leading-[1.4]">
+                                        {onDemandTranslation}
+                                      </p>
+                                    </div>
+                                  );
+                                }
+                                // Otherwise show cached original text (from when you sent a translated message)
                                 const originalText = getCachedOriginal(conversationId, text);
                                 if (!originalText) return null;
                                 return (
