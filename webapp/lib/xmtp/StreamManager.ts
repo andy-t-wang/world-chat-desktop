@@ -449,6 +449,90 @@ class XMTPStreamManager {
   // Current user's username (for @mention detection)
   private currentUserUsername: string | null = null;
 
+  // Translation download in progress - syncs should be deferred
+  private translationInProgress = false;
+
+  // Track if database corruption was detected
+  private databaseCorrupted = false;
+
+  /**
+   * Check if a heavy I/O operation (like translation download) is in progress
+   * Sync operations should check this and defer if true
+   */
+  isHeavyOperationInProgress(): boolean {
+    return this.translationInProgress;
+  }
+
+  /**
+   * Set the translation-in-progress flag
+   * Call this before starting translation download, clear when done
+   */
+  setTranslationInProgress(inProgress: boolean): void {
+    console.log('[StreamManager] Translation in progress:', inProgress);
+    this.translationInProgress = inProgress;
+  }
+
+  /**
+   * Check if database sync is currently in progress
+   * Translation should wait for this to complete before starting
+   */
+  isSyncing(): boolean {
+    return store.get(isSyncingConversationsAtom);
+  }
+
+  /**
+   * Check if database corruption has been detected
+   */
+  isDatabaseCorrupted(): boolean {
+    return this.databaseCorrupted;
+  }
+
+  /**
+   * Check if an error indicates database corruption
+   * If so, set the flag and log for user guidance
+   */
+  private checkForDatabaseCorruption(error: unknown): boolean {
+    const errorStr = String(error);
+    if (errorStr.includes('database disk image is malformed') ||
+        errorStr.includes('SQLITE_CORRUPT') ||
+        errorStr.includes('SqlKeyStore') && errorStr.includes('malformed')) {
+      console.error('[StreamManager] DATABASE CORRUPTION DETECTED');
+      console.error('[StreamManager] The XMTP database has become corrupted.');
+      console.error('[StreamManager] To fix: Clear site data for this app and re-login.');
+      this.databaseCorrupted = true;
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Wait for any in-progress sync to complete
+   * Returns a promise that resolves when sync is done (or immediately if not syncing)
+   */
+  async waitForSyncComplete(timeoutMs: number = 30000): Promise<boolean> {
+    if (!this.isSyncing()) return true;
+
+    console.log('[StreamManager] Waiting for sync to complete...');
+    const startTime = Date.now();
+
+    return new Promise((resolve) => {
+      const checkSync = () => {
+        if (!this.isSyncing()) {
+          console.log('[StreamManager] Sync completed, proceeding');
+          resolve(true);
+          return;
+        }
+        if (Date.now() - startTime > timeoutMs) {
+          console.warn('[StreamManager] Sync wait timeout, proceeding anyway');
+          resolve(false);
+          return;
+        }
+        setTimeout(checkSync, 500);
+      };
+      checkSync();
+    });
+  }
+
   /**
    * Initialize the manager with an XMTP client
    *
@@ -974,6 +1058,8 @@ class XMTPStreamManager {
       console.error('[StreamManager] Initial sync error:', error);
       store.set(isLoadingConversationsAtom, false);
       store.set(isSyncingConversationsAtom, false);
+      // Check for database corruption
+      this.checkForDatabaseCorruption(error);
       // Note: We intentionally don't clear session on errors here - that's the auth layer's job
       // StreamManager should never clear session or redirect, just log errors
     }
@@ -1594,13 +1680,19 @@ class XMTPStreamManager {
       } catch (error) {
         if (signal.aborted) return; // Intentional abort, don't restart
 
+        // Check for database corruption
+        if (this.checkForDatabaseCorruption(error)) {
+          console.error('[StreamManager] Conversation stream stopped due to database corruption');
+          return; // Don't restart if database is corrupted
+        }
+
         // Attempt restart if under limit
         if (this.conversationStreamRestarts < MAX_STREAM_RESTARTS) {
           this.conversationStreamRestarts++;
           const delay = STREAM_RESTART_DELAY_MS * this.conversationStreamRestarts;
 
           setTimeout(() => {
-            if (!signal.aborted && this.client) {
+            if (!signal.aborted && this.client && !this.databaseCorrupted) {
               this.startConversationStream();
             }
           }, delay);
@@ -2354,12 +2446,18 @@ class XMTPStreamManager {
       } catch (error) {
         if (signal.aborted) return;
 
+        // Check for database corruption
+        if (this.checkForDatabaseCorruption(error)) {
+          console.error('[StreamManager] Message stream stopped due to database corruption');
+          return; // Don't restart if database is corrupted
+        }
+
         if (this.allMessagesStreamRestarts < MAX_STREAM_RESTARTS) {
           this.allMessagesStreamRestarts++;
           const delay = STREAM_RESTART_DELAY_MS * this.allMessagesStreamRestarts;
 
           setTimeout(() => {
-            if (!signal.aborted && this.client) {
+            if (!signal.aborted && this.client && !this.databaseCorrupted) {
               this.startAllMessagesStream();
             }
           }, delay);
@@ -3323,6 +3421,12 @@ class XMTPStreamManager {
       return;
     }
 
+    // Don't sync if translation is in progress
+    if (this.translationInProgress) {
+      console.warn('[StreamManager] Cannot request history sync - translation in progress');
+      return;
+    }
+
     console.log('[StreamManager] Manually requesting history sync...');
     try {
       await this.client.sendSyncRequest();
@@ -3331,6 +3435,7 @@ class XMTPStreamManager {
       console.log('[StreamManager] History sync request completed');
     } catch (error) {
       console.error('[StreamManager] History sync request failed:', error);
+      this.checkForDatabaseCorruption(error);
       throw error;
     }
   }
@@ -3350,10 +3455,17 @@ class XMTPStreamManager {
     this.historySyncInterval = setInterval(async () => {
       if (!this.client) return;
 
+      // Skip sync if translation download is in progress to prevent I/O contention
+      if (this.translationInProgress) {
+        console.log('[StreamManager] Skipping periodic sync - translation in progress');
+        return;
+      }
+
       try {
         await this.client.conversations.syncAll([ConsentState.Allowed, ConsentState.Unknown]);
       } catch (error) {
         console.error('[StreamManager] Periodic history sync error:', error);
+        this.checkForDatabaseCorruption(error);
       }
     }, SYNC_INTERVAL_MS);
   }

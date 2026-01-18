@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef } from "react";
 import { atom, useAtom, useAtomValue, useSetAtom } from "jotai";
 import { isElectron } from "@/lib/storage";
+import { streamManager } from "@/lib/xmtp/StreamManager";
 
 // localStorage key for per-conversation auto-translate settings
 const AUTO_TRANSLATE_KEY = "auto-translate-conversations";
@@ -101,6 +102,7 @@ export function useTranslation() {
   }, [setIsInitializing, setProgress]);
 
   // Check if translation was previously enabled and auto-initialize
+  // IMPORTANT: This coordinates with XMTP sync to prevent database corruption
   useEffect(() => {
     if (initAttemptedRef.current) return;
     initAttemptedRef.current = true;
@@ -121,9 +123,27 @@ export function useTranslation() {
         if (wasEnabled) {
           // Auto-initialize in background
           console.log("[useTranslation] Auto-initializing translation (was previously enabled)");
+
+          // Wait for any in-progress XMTP sync to complete before starting
+          // This prevents I/O contention that can cause database corruption
+          if (streamManager.isSyncing()) {
+            console.log("[useTranslation] Waiting for XMTP sync before auto-init...");
+            setProgress({ status: 'waiting', progress: 0, timeEstimate: 'Waiting for sync...' });
+            await streamManager.waitForSyncComplete(60000);
+          }
+
+          // Check for database corruption before proceeding
+          if (streamManager.isDatabaseCorrupted()) {
+            console.error("[useTranslation] Database corrupted, skipping auto-init");
+            return;
+          }
+
           setIsInitializing(true);
 
           try {
+            // Tell StreamManager that translation is starting
+            streamManager.setTranslationInProgress(true);
+
             await window.electronAPI.translation.initialize();
             setIsInitialized(true);
           } catch (err) {
@@ -131,6 +151,8 @@ export function useTranslation() {
             // Clear the enabled preference if auto-init fails
             await window.electronAPI.translation.setEnabled(false);
           } finally {
+            // Always clear the translation flag
+            streamManager.setTranslationInProgress(false);
             setIsInitializing(false);
             setProgress(null);
           }
@@ -158,6 +180,10 @@ export function useTranslation() {
   /**
    * Initialize translation service and download models
    * This may take a while on first run as it downloads models (~150MB)
+   *
+   * IMPORTANT: This coordinates with XMTP sync to prevent database corruption.
+   * The translation download and XMTP sync are both heavy I/O operations that
+   * should not run concurrently.
    */
   const initialize = useCallback(async (): Promise<boolean> => {
     if (!isElectron() || !window.electronAPI?.translation) {
@@ -168,10 +194,27 @@ export function useTranslation() {
     // Check if already initialized
     if (isInitialized) return true;
 
+    // Check if database is corrupted - don't start translation if so
+    if (streamManager.isDatabaseCorrupted()) {
+      setError("Database error detected. Please restart the app.");
+      return false;
+    }
+
     setIsInitializing(true);
     setError(null);
 
     try {
+      // Wait for any in-progress XMTP sync to complete before starting translation
+      // This prevents I/O contention that can cause database corruption
+      if (streamManager.isSyncing()) {
+        console.log("[useTranslation] Waiting for XMTP sync to complete...");
+        setProgress({ status: 'waiting', progress: 0, timeEstimate: 'Waiting for sync...' });
+        await streamManager.waitForSyncComplete(60000); // Wait up to 60 seconds
+      }
+
+      // Tell StreamManager that translation is starting - syncs will be deferred
+      streamManager.setTranslationInProgress(true);
+
       await window.electronAPI.translation.initialize();
       setIsInitialized(true);
       return true;
@@ -180,6 +223,8 @@ export function useTranslation() {
       setError(message);
       return false;
     } finally {
+      // Always clear the translation flag, even on error
+      streamManager.setTranslationInProgress(false);
       setIsInitializing(false);
       setProgress(null);
     }

@@ -38,7 +38,11 @@ import {
 } from "@/stores/settings";
 import { streamManager } from "@/lib/xmtp/StreamManager";
 import { clearSession } from "@/lib/auth/session";
-import { clearSessionCache } from "@/lib/storage";
+import {
+  getSessionCache,
+  clearSessionCache,
+  deleteXmtpDatabase,
+} from "@/lib/storage";
 
 interface SettingsPanelProps {
   onClose: () => void;
@@ -158,9 +162,23 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
     if (isLoggingOut) return;
     setIsLoggingOut(true);
     try {
+      // Get inboxId before clearing session
+      const session = await getSessionCache();
+
+      // Cleanup streams first
       streamManager.cleanup();
+
+      // Delete XMTP database to allow recovery from corruption
+      // History sync will recover messages from the network on next login
+      if (session?.inboxId) {
+        await deleteXmtpDatabase(session.inboxId);
+      }
+
+      // Clear session
       clearSession();
       await clearSessionCache();
+
+      // Redirect to login
       window.location.href = "/";
     } catch (error) {
       console.error("Logout failed:", error);
