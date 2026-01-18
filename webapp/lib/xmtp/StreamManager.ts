@@ -28,6 +28,7 @@ import {
   selectedConversationIdAtom,
   reactionsAtom,
   reactionsVersionAtom,
+  identityInvalidAtom,
 } from '@/stores';
 import type { ReactionContent, StoredReaction } from '@/stores/messages';
 import type { DecodedMessage } from '@xmtp/browser-sdk';
@@ -966,8 +967,14 @@ class XMTPStreamManager {
       console.error('[StreamManager] Initial sync error:', error);
       store.set(isLoadingConversationsAtom, false);
       store.set(isSyncingConversationsAtom, false);
-      // Note: We intentionally don't clear session on errors here - that's the auth layer's job
-      // StreamManager should never clear session or redirect, just log errors
+
+      // Check for identity errors - signal auth layer to clear session
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      if (errorMessage.toLowerCase().includes('uninitialized identity') ||
+          errorMessage.toLowerCase().includes('identity error')) {
+        console.warn('[StreamManager] Identity is invalid, signaling auth layer');
+        store.set(identityInvalidAtom, true);
+      }
     }
   }
 
