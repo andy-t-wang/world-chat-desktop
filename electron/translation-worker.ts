@@ -111,6 +111,31 @@ process.on('message', async (msg: WorkerMessage) => {
           return;
         }
 
+        // If translator is ready but langDetector isn't, we can still return success
+        // and load langDetector in the background (translation will fall back to English)
+        if (translator && !langDetector && !isInitializing) {
+          console.log('[TranslationWorker] Translator ready, loading language detector in background...');
+          // Return success immediately so translation can work
+          send({ id, type: 'result', payload: { success: true } });
+
+          // Load langDetector in background (don't await, don't block)
+          (async () => {
+            try {
+              const { pipeline, env } = await import('@huggingface/transformers');
+              if (cacheDir) env.cacheDir = cacheDir;
+              langDetector = await pipeline(
+                'text-classification',
+                'Xenova/bert-base-multilingual-cased-finetuned-language-detection',
+                { device: 'cpu' }
+              );
+              console.log('[TranslationWorker] Language detector loaded in background');
+            } catch (err) {
+              console.error('[TranslationWorker] Failed to load language detector:', err);
+            }
+          })();
+          return;
+        }
+
         if (isInitializing) {
           // Queue this request to be notified when initialization completes
           pendingInitCallbacks.push({ id });
@@ -360,31 +385,33 @@ process.on('message', async (msg: WorkerMessage) => {
         // Auto-detect source language if "auto" is passed or from is missing
         if (!from || from === 'auto') {
           if (!langDetector) {
-            send({ id, type: 'error', payload: 'Language detector not initialized for auto-detection' });
-            return;
-          }
+            // Language detector not loaded yet - fall back to English as source
+            // This allows translation to work while the detection model downloads
+            console.log('[TranslationWorker] Language detector not ready, falling back to English source');
+            from = 'en';
+          } else {
+            console.log('[TranslationWorker] Auto-detecting source language...');
+            const detectResult = await langDetector(text, { topk: 1 });
+            const detected = detectResult[0];
+            const langLabel = (detected?.label || '').toLowerCase();
+            from = LANG_DETECT_MAP[langLabel] || 'en'; // Default to English if unknown
+            console.log('[TranslationWorker] Auto-detected:', langLabel, '->', from, 'confidence:', detected?.score);
 
-          console.log('[TranslationWorker] Auto-detecting source language...');
-          const detectResult = await langDetector(text, { topk: 1 });
-          const detected = detectResult[0];
-          const langLabel = (detected?.label || '').toLowerCase();
-          from = LANG_DETECT_MAP[langLabel] || 'en'; // Default to English if unknown
-          console.log('[TranslationWorker] Auto-detected:', langLabel, '->', from, 'confidence:', detected?.score);
-
-          // If detected language is the same as target, skip translation
-          if (from === to) {
-            console.log('[TranslationWorker] Source and target are the same, skipping translation');
-            send({
-              id,
-              type: 'result',
-              payload: {
-                translatedText: text,
-                from,
-                to,
-                skipped: true,
-              },
-            });
-            return;
+            // If detected language is the same as target, skip translation
+            if (from === to) {
+              console.log('[TranslationWorker] Source and target are the same, skipping translation');
+              send({
+                id,
+                type: 'result',
+                payload: {
+                  translatedText: text,
+                  from,
+                  to,
+                  skipped: true,
+                },
+              });
+              return;
+            }
           }
         }
 
@@ -419,10 +446,12 @@ process.on('message', async (msg: WorkerMessage) => {
       }
 
       case 'isReady': {
+        // Return true if translator is ready (translation works even without langDetector)
+        // langDetector is optional - translation falls back to English source if not available
         send({
           id,
           type: 'result',
-          payload: !!translator && !!langDetector && !isInitializing,
+          payload: !!translator && !isInitializing,
         });
         break;
       }
