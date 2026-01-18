@@ -187,6 +187,16 @@ export function useQRXmtpClient(): UseQRXmtpClientResult {
       } catch (verifyError) {
         const verifyMsg = verifyError instanceof Error ? verifyError.message : String(verifyError);
         console.error('[QRXmtpClient] Identity verification failed:', verifyMsg);
+
+        // Check if this is actually a database lock conflict, not true uninitialized identity
+        // OPFS SyncAccessHandle Pool VFS doesn't support multiple connections
+        // Error looks like: "Failed to execute 'createSyncAccessHandle'...Access Handles cannot be created if there is another open Access Handle"
+        if (verifyMsg.includes('Access Handle') || verifyMsg.includes('SyncAccessHandle') || verifyMsg.includes('createSyncAccessHandle')) {
+          console.error('[QRXmtpClient] Database locked by another tab/window - NOT clearing session');
+          releaseTabLock();
+          throw new Error("TAB_LOCKED");
+        }
+
         if (verifyMsg.includes('Uninitialized identity') || verifyMsg.includes('register_identity')) {
           console.error('[QRXmtpClient] Identity not registered, clearing database and session for re-login');
           releaseTabLock();
@@ -226,12 +236,25 @@ export function useQRXmtpClient(): UseQRXmtpClientResult {
       // Release the tab lock on failure
       releaseTabLock();
 
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+
+      // Re-throw TAB_LOCKED so caller can handle it
+      if (errorMessage === "TAB_LOCKED") {
+        throw error;
+      }
+
+      // Detect OPFS database lock conflict from Client.build() failure
+      // OPFS SyncAccessHandle Pool VFS doesn't support multiple connections
+      if (errorMessage.includes('Access Handle') || errorMessage.includes('SyncAccessHandle') || errorMessage.includes('createSyncAccessHandle')) {
+        console.error('[QRXmtpClient] Database locked by another tab/window');
+        throw new Error("TAB_LOCKED");
+      }
+
       // Only clear session cache if OPFS database is truly gone
       // Be VERY conservative - XMTP has installation limits (10 max, 250 changes)
       // "Uninitialized identity" can be transient - don't auto-clear on that
       // For other errors (network, temporary), keep session so user can retry
-      const errorMessage =
-        error instanceof Error ? error.message : String(error);
       const isDbGone =
         errorMessage.toLowerCase().includes("no local database") ||
         errorMessage.toLowerCase().includes("database not found") ||
@@ -387,6 +410,13 @@ export function useQRXmtpClient(): UseQRXmtpClientResult {
         } catch (verifyError) {
           const verifyMsg = verifyError instanceof Error ? verifyError.message : String(verifyError);
           console.error('[QRXmtpClient] Identity verification FAILED:', verifyMsg);
+
+          // Check if this is actually a database lock conflict, not true uninitialized identity
+          if (verifyMsg.includes('Access Handle') || verifyMsg.includes('SyncAccessHandle') || verifyMsg.includes('createSyncAccessHandle')) {
+            console.error('[QRXmtpClient] Database locked by another tab/window - NOT clearing session');
+            releaseTabLock();
+            throw new Error("TAB_LOCKED");
+          }
 
           if (verifyMsg.includes('Uninitialized identity') || verifyMsg.includes('register_identity')) {
             console.error('[QRXmtpClient] CRITICAL: Client created but identity not registered!');
