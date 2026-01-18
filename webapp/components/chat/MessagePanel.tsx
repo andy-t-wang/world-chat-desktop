@@ -1922,6 +1922,24 @@ export function MessagePanel({
     }
   };
 
+  // Unified send handler that respects translation settings
+  const handleSendWithTranslation = () => {
+    // If preview is showing, send the translated message
+    if (translationPreview) {
+      handleSendTranslated();
+      return;
+    }
+
+    // If outgoing translation is enabled, show preview first
+    if (outgoingTranslateTo && message.trim()) {
+      handleShowTranslationPreview();
+      return;
+    }
+
+    // Normal send
+    handleSend();
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
     // Escape or Backspace cancels translation preview
     if ((e.key === "Escape" || e.key === "Backspace") && translationPreview) {
@@ -1932,21 +1950,7 @@ export function MessagePanel({
 
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-
-      // If preview is showing, send the translated message
-      if (translationPreview) {
-        handleSendTranslated();
-        return;
-      }
-
-      // If outgoing translation is enabled, show preview first
-      if (outgoingTranslateTo && message.trim()) {
-        handleShowTranslationPreview();
-        return;
-      }
-
-      // Normal send
-      handleSend();
+      handleSendWithTranslation();
     }
   };
 
@@ -3509,7 +3513,7 @@ export function MessagePanel({
               currentInboxId={client?.inboxId}
             />
             <button
-              onClick={handleSend}
+              onClick={handleSendWithTranslation}
               disabled={!message.trim() || isSending}
               className="w-11 h-11 flex items-center justify-center rounded-xl bg-[var(--bubble-outgoing)] hover:bg-[var(--accent-blue-hover)] disabled:bg-[var(--border-default)] disabled:cursor-not-allowed transition-colors shrink-0 active:scale-95"
             >
