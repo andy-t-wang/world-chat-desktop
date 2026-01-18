@@ -268,11 +268,17 @@ process.on('message', async (msg: WorkerMessage) => {
         });
 
         console.log('[TranslationWorker] Translation complete');
+
+        // Clean up translation: remove leading punctuation that models sometimes add
+        let translatedText = result[0]?.translation_text || text;
+        // Remove leading punctuation (ASCII and common Unicode punctuation)
+        translatedText = translatedText.replace(/^[\s,，.。;；:：!！?？、·…—–\-'"'"「」『』【】()（）[\]]+/, '').trim();
+
         send({
           id,
           type: 'result',
           payload: {
-            translatedText: result[0]?.translation_text || text,
+            translatedText,
             from,
             to,
           },
