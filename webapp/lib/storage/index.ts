@@ -104,6 +104,47 @@ export async function clearSessionCache(): Promise<void> {
 // ============================================================================
 
 /**
+ * Check if XMTP OPFS database exists for a given inboxId
+ */
+export async function checkXmtpDatabaseExists(inboxId: string): Promise<boolean> {
+  if (typeof window === 'undefined') return false;
+
+  try {
+    const root = await navigator.storage.getDirectory();
+    const dbName = `xmtp-production-${inboxId}.db3`;
+
+    // Try to get file handle - will throw if doesn't exist
+    await root.getFileHandle(dbName);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * List all XMTP databases in OPFS (for debugging)
+ */
+export async function listXmtpDatabases(): Promise<string[]> {
+  if (typeof window === 'undefined') return [];
+
+  try {
+    const root = await navigator.storage.getDirectory();
+    const files: string[] = [];
+
+    // @ts-ignore - entries() exists on FileSystemDirectoryHandle
+    for await (const [name] of root.entries()) {
+      if (name.startsWith('xmtp-') && name.endsWith('.db3')) {
+        files.push(name);
+      }
+    }
+    return files;
+  } catch (error) {
+    console.warn('[Storage] Failed to list OPFS files:', error);
+    return [];
+  }
+}
+
+/**
  * Delete XMTP OPFS database for a given inboxId
  * Call this when identity is uninitialized to prevent orphan installations
  */

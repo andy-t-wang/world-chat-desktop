@@ -13,7 +13,7 @@ import {
   acquireTabLock,
   releaseTabLock,
 } from "@/lib/tab-lock";
-import { getSessionCache, setSessionCache, isElectron, deleteXmtpDatabase } from "@/lib/storage";
+import { getSessionCache, setSessionCache, isElectron, deleteXmtpDatabase, checkXmtpDatabaseExists, listXmtpDatabases } from "@/lib/storage";
 
 // Module cache for faster subsequent loads
 let cachedModules: Awaited<ReturnType<typeof loadAllModules>> | null = null;
@@ -278,8 +278,26 @@ export function useQRXmtpClient(): UseQRXmtpClientResult {
       dispatch({ type: "INIT_START" });
 
       const address = signer.getIdentifier().identifier;
+      console.log('[QRXmtpClient] ========== INITIALIZE WITH REMOTE SIGNER ==========');
+      console.log('[QRXmtpClient] Signer address:', address);
 
       try {
+        // Log current state BEFORE doing anything
+        const existingSession = await getSessionCache();
+        const allDatabases = await listXmtpDatabases();
+        console.log('[QRXmtpClient] Existing session cache:', existingSession ? {
+          address: existingSession.address,
+          inboxId: existingSession.inboxId,
+          age: Date.now() - existingSession.timestamp
+        } : null);
+        console.log('[QRXmtpClient] OPFS databases found:', allDatabases);
+
+        // Check if DB exists for this session's inboxId
+        if (existingSession?.inboxId) {
+          const dbExists = await checkXmtpDatabaseExists(existingSession.inboxId);
+          console.log('[QRXmtpClient] DB exists for cached inboxId?', dbExists);
+        }
+
         // Use cached modules for faster load
         const {
           Client,
@@ -313,14 +331,15 @@ export function useQRXmtpClient(): UseQRXmtpClientResult {
         // Check if we have an existing session for THIS specific address
         // Only try build() if session exists - otherwise it might fail due to
         // DB existing for a different address
-        const existingSession = await getSessionCache();
         const hasSessionForThisAddress =
           existingSession?.address?.toLowerCase() === address.toLowerCase();
+
+        console.log('[QRXmtpClient] Has session for this address?', hasSessionForThisAddress);
 
         if (hasSessionForThisAddress) {
           // We have a session for this address - use build() to reuse installation
           // Don't create new installation if build fails
-          console.log("[QRXmtpClient] Existing session found for this address, using Client.build()");
+          console.log("[QRXmtpClient] Using Client.build() to reuse existing installation...");
           try {
             xmtpClient = await Client.build(
               {
@@ -329,7 +348,7 @@ export function useQRXmtpClient(): UseQRXmtpClientResult {
               },
               clientOptions
             );
-            console.log("[QRXmtpClient] Client.build() succeeded - reusing existing installation");
+            console.log("[QRXmtpClient] Client.build() succeeded, inboxId:", xmtpClient.inboxId);
           } catch (buildError) {
             // Session exists but build failed - something is wrong
             // Don't auto-create, let user see the error and retry
@@ -338,15 +357,64 @@ export function useQRXmtpClient(): UseQRXmtpClientResult {
           }
         } else {
           // No session for this address - this is a fresh login, use create()
-          console.log("[QRXmtpClient] No existing session for this address, using Client.create()");
-          xmtpClient = await Client.create(signer, clientOptions);
-          console.log("[QRXmtpClient] Client.create() succeeded - new installation created");
+          console.log("[QRXmtpClient] No existing session - using Client.create() for fresh login...");
+          console.log("[QRXmtpClient] Starting Client.create() at:", new Date().toISOString());
+
+          try {
+            xmtpClient = await Client.create(signer, clientOptions);
+            console.log("[QRXmtpClient] Client.create() succeeded at:", new Date().toISOString());
+            console.log("[QRXmtpClient] New client inboxId:", xmtpClient.inboxId);
+          } catch (createError) {
+            console.error("[QRXmtpClient] Client.create() FAILED:", createError);
+            console.error("[QRXmtpClient] Create error details:", createError instanceof Error ? {
+              name: createError.name,
+              message: createError.message,
+              stack: createError.stack
+            } : createError);
+
+            // Log state after failure
+            const dbsAfterFail = await listXmtpDatabases();
+            console.error("[QRXmtpClient] OPFS databases after create failure:", dbsAfterFail);
+            throw createError;
+          }
         }
 
-        // Cache session for page reloads (async, don't await)
+        // Verify identity is registered BEFORE caching session
+        console.log('[QRXmtpClient] Verifying identity registration with preferences.sync()...');
+        try {
+          await xmtpClient.preferences.sync();
+          console.log('[QRXmtpClient] Identity verification PASSED - sync succeeded');
+        } catch (verifyError) {
+          const verifyMsg = verifyError instanceof Error ? verifyError.message : String(verifyError);
+          console.error('[QRXmtpClient] Identity verification FAILED:', verifyMsg);
+
+          if (verifyMsg.includes('Uninitialized identity') || verifyMsg.includes('register_identity')) {
+            console.error('[QRXmtpClient] CRITICAL: Client created but identity not registered!');
+            console.error('[QRXmtpClient] This means registration was interrupted');
+
+            // Clean up the corrupted state
+            if (xmtpClient.inboxId) {
+              await deleteXmtpDatabase(xmtpClient.inboxId);
+            }
+            releaseTabLock();
+            clearSession();
+            dispatch({ type: "INIT_ERROR", error: new Error("Identity registration failed. Please try again.") });
+            throw new Error("Identity registration incomplete");
+          }
+          // Other errors might be transient, continue
+          console.warn('[QRXmtpClient] Non-fatal verification error, continuing');
+        }
+
+        // Cache session for page reloads
+        console.log('[QRXmtpClient] Caching session for address:', address, 'inboxId:', xmtpClient.inboxId);
         if (xmtpClient.inboxId) {
           setSessionCache(address, xmtpClient.inboxId);
         }
+
+        // Log final state
+        const finalDbs = await listXmtpDatabases();
+        console.log('[QRXmtpClient] OPFS databases after success:', finalDbs);
+        console.log('[QRXmtpClient] ========== INITIALIZATION COMPLETE ==========');
 
         dispatch({ type: "INIT_SUCCESS", client: xmtpClient });
 
