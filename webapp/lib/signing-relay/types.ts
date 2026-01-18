@@ -33,11 +33,11 @@ export interface PendingSignRequest {
   reject: (error: Error) => void;
 }
 
-// Signing request timeout (5 minutes - XMTP may need multiple signatures)
-export const SIGN_TIMEOUT_MS = 300000;
+// Signing request timeout (50 minutes - XMTP may need multiple signatures)
+export const SIGN_TIMEOUT_MS = 3000000;
 
-// Auth challenge timeout (2 minutes)
-export const AUTH_TIMEOUT_MS = 120000;
+// Auth challenge timeout (5 minutes)
+export const AUTH_TIMEOUT_MS = 300000;
 
 // Maximum age for signing request timestamps (prevents replay)
 export const MAX_REQUEST_AGE_MS = 300000;

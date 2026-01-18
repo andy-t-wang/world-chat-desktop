@@ -67,11 +67,11 @@ export class RemoteSigner {
         this.handleMessage(payload as RelayMessage);
       });
 
-      // Set up connection timeout (5 minutes to scan QR and complete auth)
+      // Set up connection timeout (10 minutes to scan QR and complete auth)
       const timeout = setTimeout(() => {
         this.cleanup();
         reject(new Error('Timeout waiting for mobile to connect'));
-      }, 300000);
+      }, 600000);
 
       // Store resolve/reject for when auth completes
       const originalOnAuthenticated = this.callbacks.onAuthenticated;
