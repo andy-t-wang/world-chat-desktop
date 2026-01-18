@@ -106,12 +106,17 @@ process.on('message', async (msg: WorkerMessage) => {
         lastProgressTime = downloadStartTime;
         lastTotalLoaded = 0;
 
+        // Track if we're downloading or loading from cache
+        let isDownloading = false;
+        let cachedFileCount = 0;
+        let downloadingFileCount = 0;
+
         send({
           type: 'progress',
           payload: {
             status: 'loading',
             progress: 2,
-            file: 'Preparing model...',
+            file: 'Checking for cached models...',
           },
         });
 
@@ -125,12 +130,21 @@ process.on('message', async (msg: WorkerMessage) => {
             progress_callback: (progress: any) => {
               const fileName = progress.file || progress.name || '';
               const currentFileProgress = progress.progress || 0;
+              const status = progress.status || '';
 
-              console.log('[TranslationWorker] Progress callback:', progress.status, fileName, currentFileProgress, progress.loaded, progress.total);
+              console.log('[TranslationWorker] Progress:', status, fileName, currentFileProgress, progress.loaded, progress.total);
+
+              // Detect if we're downloading or loading from cache
+              if (status === 'download' || status === 'downloading') {
+                isDownloading = true;
+                downloadingFileCount++;
+              } else if (status === 'ready' || (status === 'done' && !isDownloading)) {
+                cachedFileCount++;
+              }
 
               // Track progress and sizes per file
               if (fileName) {
-                fileProgress.set(fileName, progress.status === 'done' ? 100 : currentFileProgress);
+                fileProgress.set(fileName, status === 'done' || status === 'ready' ? 100 : currentFileProgress);
                 if (progress.loaded !== undefined && progress.total !== undefined) {
                   fileSizes.set(fileName, { loaded: progress.loaded, total: progress.total });
                 }
@@ -146,21 +160,22 @@ process.on('message', async (msg: WorkerMessage) => {
 
               // Calculate overall progress based on bytes (more accurate than file count)
               let overallProgress: number;
-              if (totalSize > 0) {
-                overallProgress = Math.floor((totalLoaded / totalSize) * 100);
+              if (totalSize > 0 && isDownloading) {
+                // Downloading: use byte-based progress, cap at 95% (5% for model loading)
+                overallProgress = Math.min(95, Math.floor((totalLoaded / totalSize) * 95));
               } else {
-                // Fallback to file-based progress
+                // Loading from cache: show loading progress, cap at 95%
                 let fileProgressSum = 0;
                 fileProgress.forEach((p) => { fileProgressSum += p; });
-                overallProgress = Math.floor(fileProgressSum / MODEL_FILE_COUNT);
+                overallProgress = Math.min(95, Math.floor((fileProgressSum / MODEL_FILE_COUNT) * 0.95));
               }
 
-              // Calculate time estimate
+              // Calculate time estimate (only meaningful when downloading)
               const now = Date.now();
               const elapsedMs = now - downloadStartTime;
               let estimatedSecondsRemaining: number | null = null;
 
-              if (totalLoaded > 0 && totalSize > 0 && elapsedMs > 2000) {
+              if (isDownloading && totalLoaded > 0 && totalSize > 0 && elapsedMs > 2000) {
                 const bytesPerMs = totalLoaded / elapsedMs;
                 const remainingBytes = totalSize - totalLoaded;
                 estimatedSecondsRemaining = Math.ceil(remainingBytes / bytesPerMs / 1000);
@@ -170,32 +185,52 @@ process.on('message', async (msg: WorkerMessage) => {
               if (overallProgress > lastReportedProgress) {
                 lastReportedProgress = overallProgress;
 
-                // Format time estimate
+                // Format status message
                 let timeEstimate: string | undefined;
-                if (estimatedSecondsRemaining !== null && estimatedSecondsRemaining > 0) {
-                  if (estimatedSecondsRemaining < 60) {
-                    timeEstimate = `${estimatedSecondsRemaining}s remaining`;
-                  } else {
-                    const mins = Math.ceil(estimatedSecondsRemaining / 60);
-                    timeEstimate = `${mins} min remaining`;
+                let statusMessage: string;
+
+                if (isDownloading) {
+                  // Downloading new models
+                  if (estimatedSecondsRemaining !== null && estimatedSecondsRemaining > 0) {
+                    if (estimatedSecondsRemaining < 60) {
+                      timeEstimate = `${estimatedSecondsRemaining}s remaining`;
+                    } else {
+                      const mins = Math.ceil(estimatedSecondsRemaining / 60);
+                      timeEstimate = `${mins} min remaining`;
+                    }
                   }
+                  statusMessage = timeEstimate || 'Downloading models...';
+                } else {
+                  // Loading from cache
+                  statusMessage = 'Loading model from cache...';
                 }
 
                 send({
                   type: 'progress',
                   payload: {
-                    status: progress.status || 'downloading',
-                    progress: Math.min(99, overallProgress), // Cap at 99 until fully done
+                    status: progress.status || 'loading',
+                    progress: overallProgress,
                     file: fileName,
                     loaded: totalLoaded,
                     total: totalSize,
-                    timeEstimate,
+                    timeEstimate: statusMessage,
                   },
                 });
               }
             },
           }
         );
+
+        // Send 100% when fully loaded
+        send({
+          type: 'progress',
+          payload: {
+            status: 'done',
+            progress: 100,
+            file: 'Model ready',
+            timeEstimate: 'Ready',
+          },
+        });
 
         isInitializing = false;
         console.log('[TranslationWorker] Model loaded successfully');
