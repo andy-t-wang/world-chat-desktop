@@ -1,8 +1,10 @@
 import { app, BrowserWindow, ipcMain, safeStorage } from 'electron';
-import { ChildProcess, spawn } from 'child_process';
+import { ChildProcess, spawn, execSync } from 'child_process';
 import { autoUpdater } from 'electron-updater';
 import * as path from 'path';
 import * as fs from 'fs';
+import * as https from 'https';
+import * as os from 'os';
 
 // Paths
 const STORAGE_FILE = path.join(app.getPath('userData'), 'secure-storage.enc');
@@ -404,9 +406,22 @@ let translationInitializing = false;
 let lastTranslationProgress: { status: string; progress: number; file?: string } | null = null;
 let messageBuffer = '';
 
-// Find system Node.js (not Electron's)
+// Node.js version to download (LTS)
+const NODE_VERSION = 'v20.18.1';
+
+// Find bundled Node.js in app data directory
+function findBundledNode(): string | null {
+  const appDataPath = app.getPath('userData');
+  const nodePath = path.join(appDataPath, 'node', 'bin', 'node');
+  if (fs.existsSync(nodePath)) {
+    console.log('[Translation] Found bundled Node.js at:', nodePath);
+    return nodePath;
+  }
+  return null;
+}
+
+// Find system Node.js as fallback (not Electron's)
 function findSystemNode(): string | null {
-  const { execSync } = require('child_process');
   const possiblePaths = [
     '/opt/homebrew/bin/node',  // macOS ARM Homebrew
     '/usr/local/bin/node',     // macOS Intel Homebrew
@@ -433,30 +448,194 @@ function findSystemNode(): string | null {
   return null;
 }
 
-function startTranslationProcess(): Promise<void> {
+// Find Node.js - bundled first, then system
+function findNodeJs(): string | null {
+  return findBundledNode() || findSystemNode();
+}
+
+// Download and extract Node.js to app data directory
+async function downloadNodeJs(onProgress?: (percent: number, status: string) => void): Promise<string> {
+  const appDataPath = app.getPath('userData');
+  const nodeDir = path.join(appDataPath, 'node');
+  const nodeBinPath = path.join(nodeDir, 'bin', 'node');
+
+  // Determine platform and architecture
+  const platform = os.platform();
+  const arch = os.arch();
+
+  if (platform !== 'darwin') {
+    throw new Error('Node.js download only supported on macOS currently');
+  }
+
+  const nodeArch = arch === 'arm64' ? 'arm64' : 'x64';
+  const tarballName = `node-${NODE_VERSION}-darwin-${nodeArch}.tar.gz`;
+  const downloadUrl = `https://nodejs.org/dist/${NODE_VERSION}/${tarballName}`;
+
+  console.log('[Translation] Downloading Node.js from:', downloadUrl);
+  onProgress?.(0, 'Downloading Node.js runtime...');
+
+  // Create temp directory for download
+  const tempDir = path.join(appDataPath, 'temp');
+  const tempFile = path.join(tempDir, tarballName);
+
+  try {
+    // Ensure directories exist
+    fs.mkdirSync(tempDir, { recursive: true });
+    fs.mkdirSync(nodeDir, { recursive: true });
+
+    // Download the tarball
+    await new Promise<void>((resolve, reject) => {
+      const file = fs.createWriteStream(tempFile);
+
+      const request = https.get(downloadUrl, (response) => {
+        // Handle redirects
+        if (response.statusCode === 302 || response.statusCode === 301) {
+          const redirectUrl = response.headers.location;
+          if (redirectUrl) {
+            https.get(redirectUrl, (redirectResponse) => {
+              const totalSize = parseInt(redirectResponse.headers['content-length'] || '0', 10);
+              let downloadedSize = 0;
+
+              redirectResponse.on('data', (chunk) => {
+                downloadedSize += chunk.length;
+                if (totalSize > 0) {
+                  const percent = Math.round((downloadedSize / totalSize) * 100);
+                  onProgress?.(percent, `Downloading Node.js runtime... ${Math.round(downloadedSize / 1024 / 1024)}MB`);
+                }
+              });
+
+              redirectResponse.pipe(file);
+              file.on('finish', () => {
+                file.close();
+                resolve();
+              });
+            }).on('error', reject);
+          } else {
+            reject(new Error('Redirect without location header'));
+          }
+          return;
+        }
+
+        if (response.statusCode !== 200) {
+          reject(new Error(`Failed to download Node.js: HTTP ${response.statusCode}`));
+          return;
+        }
+
+        const totalSize = parseInt(response.headers['content-length'] || '0', 10);
+        let downloadedSize = 0;
+
+        response.on('data', (chunk) => {
+          downloadedSize += chunk.length;
+          if (totalSize > 0) {
+            const percent = Math.round((downloadedSize / totalSize) * 100);
+            onProgress?.(percent, `Downloading Node.js runtime... ${Math.round(downloadedSize / 1024 / 1024)}MB`);
+          }
+        });
+
+        response.pipe(file);
+        file.on('finish', () => {
+          file.close();
+          resolve();
+        });
+      });
+
+      request.on('error', (err) => {
+        fs.unlink(tempFile, () => {}); // Delete incomplete file
+        reject(err);
+      });
+    });
+
+    console.log('[Translation] Download complete, extracting...');
+    onProgress?.(100, 'Extracting Node.js...');
+
+    // Extract the tarball using system tar (works on macOS)
+    // Extract to temp first, then move contents
+    const extractDir = path.join(tempDir, 'node-extract');
+    fs.mkdirSync(extractDir, { recursive: true });
+
+    execSync(`tar -xzf "${tempFile}" -C "${extractDir}"`, { encoding: 'utf8' });
+
+    // Find the extracted directory (node-v20.x.x-darwin-arm64)
+    const extractedDirs = fs.readdirSync(extractDir);
+    const nodeExtractedDir = extractedDirs.find(d => d.startsWith('node-'));
+
+    if (!nodeExtractedDir) {
+      throw new Error('Failed to find extracted Node.js directory');
+    }
+
+    // Move contents to final location
+    const srcDir = path.join(extractDir, nodeExtractedDir);
+
+    // Remove existing node directory contents
+    if (fs.existsSync(nodeDir)) {
+      fs.rmSync(nodeDir, { recursive: true });
+    }
+
+    // Move extracted directory to final location
+    fs.renameSync(srcDir, nodeDir);
+
+    // Clean up
+    fs.rmSync(tempDir, { recursive: true });
+
+    // Make node binary executable
+    fs.chmodSync(nodeBinPath, 0o755);
+
+    console.log('[Translation] Node.js installed at:', nodeBinPath);
+    return nodeBinPath;
+  } catch (error) {
+    // Clean up on error
+    try {
+      fs.rmSync(tempDir, { recursive: true });
+    } catch {}
+
+    throw error;
+  }
+}
+
+async function startTranslationProcess(): Promise<void> {
+  if (translationProcess) {
+    console.log('[Translation] Process already running');
+    return;
+  }
+
+  // Check for Node.js (bundled first, then system)
+  let nodePath = findNodeJs();
+
+  if (!nodePath) {
+    console.log('[Translation] Node.js not found, downloading...');
+
+    // Send progress to renderer
+    mainWindow?.webContents.send('translation:progress', {
+      status: 'downloading',
+      progress: 0,
+      file: 'Downloading Node.js runtime...',
+    });
+
+    try {
+      nodePath = await downloadNodeJs((percent, status) => {
+        mainWindow?.webContents.send('translation:progress', {
+          status: 'downloading',
+          progress: Math.round(percent * 0.1), // Node.js is 10% of total progress
+          file: status,
+        });
+      });
+    } catch (error) {
+      console.error('[Translation] Failed to download Node.js:', error);
+      throw new Error('Failed to download Node.js runtime. Please check your internet connection.');
+    }
+  }
+
+  console.log('[Translation] Starting process with Node.js:', nodePath);
+  const cacheDir = path.join(app.getPath('userData'), 'translation-models');
+  // In packaged app, worker is in app.asar.unpacked/dist/ (extracted from asar)
+  const workerPath = app.isPackaged
+    ? path.join(__dirname.replace('app.asar', 'app.asar.unpacked'), 'translation-worker.js')
+    : path.join(__dirname, 'translation-worker.js');
+  console.log('[Translation] Worker path:', workerPath);
+  console.log('[Translation] App is packaged:', app.isPackaged);
+  console.log('[Translation] Cache dir:', cacheDir);
+
   return new Promise((resolve, reject) => {
-    if (translationProcess) {
-      console.log('[Translation] Process already running');
-      resolve();
-      return;
-    }
-
-    const nodePath = findSystemNode();
-    if (!nodePath) {
-      console.error('[Translation] System Node.js not found!');
-      reject(new Error('System Node.js not found. Please install Node.js.'));
-      return;
-    }
-
-    console.log('[Translation] Starting process with system Node.js:', nodePath);
-    const cacheDir = path.join(app.getPath('userData'), 'translation-models');
-    // In packaged app, worker is in app.asar.unpacked/dist/ (extracted from asar)
-    const workerPath = app.isPackaged
-      ? path.join(__dirname.replace('app.asar', 'app.asar.unpacked'), 'translation-worker.js')
-      : path.join(__dirname, 'translation-worker.js');
-    console.log('[Translation] Worker path:', workerPath);
-    console.log('[Translation] App is packaged:', app.isPackaged);
-    console.log('[Translation] Cache dir:', cacheDir);
 
     // Check if worker file exists
     const fs = require('fs');
