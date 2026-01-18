@@ -2303,13 +2303,24 @@ class XMTPStreamManager {
           let hasValidConsent = false;
           if (conv) {
             try {
-              const consentState = await withTimeout(
+              const rawConsentState = await withTimeout(
                 conv.consentState(),
                 XMTP_OPERATION_TIMEOUT_MS,
                 'messageStream.consentState'
               );
               // Show Allowed and Unknown (so users can see and respond to new conversations)
-              hasValidConsent = consentState === ConsentState.Allowed || consentState === ConsentState.Unknown;
+              hasValidConsent = rawConsentState === ConsentState.Allowed || rawConsentState === ConsentState.Unknown;
+
+              // Update metadata's consent state to match actual state (critical for badge count)
+              if (metadata) {
+                if (rawConsentState === ConsentState.Allowed) {
+                  metadata.consentState = 'allowed';
+                } else if (rawConsentState === ConsentState.Denied) {
+                  metadata.consentState = 'denied';
+                } else {
+                  metadata.consentState = 'unknown';
+                }
+              }
             } catch {
               // If we can't check or timeout, assume allowed if it's our own message
               hasValidConsent = isOwnMsg;
