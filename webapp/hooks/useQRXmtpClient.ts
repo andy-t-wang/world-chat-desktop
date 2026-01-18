@@ -179,13 +179,14 @@ export function useQRXmtpClient(): UseQRXmtpClientResult {
 
       // Verify identity is actually registered before proceeding
       // Client.build() can succeed but identity may not be registered if previous login was interrupted
+      // Use preferences.sync() which requires network access and registered identity
       try {
-        console.log('[QRXmtpClient] Verifying identity is registered...');
-        // Try a simple operation that requires registered identity
-        await xmtpClient.preferences.inboxState();
-        console.log('[QRXmtpClient] Identity verified');
+        console.log('[QRXmtpClient] Verifying identity is registered (calling preferences.sync())...');
+        await xmtpClient.preferences.sync();
+        console.log('[QRXmtpClient] Identity verified - sync succeeded');
       } catch (verifyError) {
         const verifyMsg = verifyError instanceof Error ? verifyError.message : String(verifyError);
+        console.error('[QRXmtpClient] Identity verification failed:', verifyMsg);
         if (verifyMsg.includes('Uninitialized identity') || verifyMsg.includes('register_identity')) {
           console.error('[QRXmtpClient] Identity not registered, clearing session for re-login');
           releaseTabLock();
@@ -193,8 +194,8 @@ export function useQRXmtpClient(): UseQRXmtpClientResult {
           dispatch({ type: "INIT_ERROR", error: new Error("Identity registration incomplete. Please login again.") });
           return false;
         }
-        // Other errors - might be transient, continue anyway
-        console.warn('[QRXmtpClient] Identity verification warning:', verifyMsg);
+        // Other errors - might be transient network issues, continue anyway
+        console.warn('[QRXmtpClient] Identity verification had non-fatal error, continuing');
       }
 
       // Update cache timestamp (async, don't await)
