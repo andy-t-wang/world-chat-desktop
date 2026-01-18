@@ -5,15 +5,13 @@
  * that occur when running onnxruntime-node in Electron's Node.js build.
  *
  * Communication with main process happens via child_process IPC.
+ *
+ * NOTE: We use dynamic imports for @huggingface/transformers to avoid
+ * blocking worker startup (the import is slow due to WASM loading).
  */
-
-import { pipeline, env } from '@huggingface/transformers';
 
 // Configure cache directory (passed as command line argument from main process)
 const cacheDir = process.argv[2];
-if (cacheDir) {
-  env.cacheDir = cacheDir;
-}
 
 // NLLB language codes mapping
 const LANGUAGE_MAP: Record<string, string> = {
@@ -85,6 +83,25 @@ process.on('message', async (msg: WorkerMessage) => {
           type: 'progress',
           payload: {
             status: 'loading',
+            progress: 1,
+            file: 'Loading transformers library...',
+          },
+        });
+
+        // Dynamic import to avoid blocking worker startup
+        console.log('[TranslationWorker] Loading @huggingface/transformers...');
+        const { pipeline, env } = await import('@huggingface/transformers');
+
+        // Configure cache directory
+        if (cacheDir) {
+          env.cacheDir = cacheDir;
+        }
+
+        console.log('[TranslationWorker] Transformers loaded, starting model download...');
+        send({
+          type: 'progress',
+          payload: {
+            status: 'loading',
             progress: 2,
             file: 'Preparing model...',
           },
@@ -100,6 +117,8 @@ process.on('message', async (msg: WorkerMessage) => {
             progress_callback: (progress: any) => {
               const fileName = progress.file || progress.name || '';
               const currentFileProgress = progress.progress || 0;
+
+              console.log('[TranslationWorker] Progress callback:', progress.status, fileName, currentFileProgress);
 
               // Track progress per file
               if (fileName) {
