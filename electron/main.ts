@@ -250,9 +250,19 @@ function setupIpcHandlers() {
     };
   });
 
-  ipcMain.handle('translation:detectLanguage', async () => {
-    // Language detection not implemented - user specifies source language
-    return { language: null, confidence: 0 };
+  ipcMain.handle('translation:detectLanguage', async (_, text: string) => {
+    try {
+      if (!translationProcess || !translationReady) {
+        throw new Error('Translation service not initialized');
+      }
+      return await sendToWorker<{ language: string | null; confidence: number }>(
+        'detectLanguage',
+        { text }
+      );
+    } catch (error) {
+      console.error('[Translation] Language detection failed:', error);
+      return { language: null, confidence: 0 };
+    }
   });
 
   ipcMain.handle('translation:translate', async (_, text: string, from: string, to: string) => {

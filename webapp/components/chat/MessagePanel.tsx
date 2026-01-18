@@ -1274,9 +1274,11 @@ export function MessagePanel({
         setTranslatingIds(prev => new Set(prev).add(msgId));
 
         try {
-          const result = await translate(text, "es", "en");
+          // Use "auto" to auto-detect source language
+          const result = await translate(text, "auto", "en");
           const trimmedText = result?.translatedText?.trim();
-          if (trimmedText && trimmedText !== text) {
+          // Skip if translation was skipped (same language) or unchanged
+          if (trimmedText && trimmedText !== text && !result?.skipped) {
             setTranslations(prev => ({
               ...prev,
               [msgId]: trimmedText,
@@ -1316,11 +1318,11 @@ export function MessagePanel({
     setTranslatingIds(prev => new Set(prev).add(messageId));
 
     try {
-      // Translate to English from Spanish (most common use case)
-      // TODO: Add language detection or let user configure source/target languages
-      const result = await translate(text, "es", "en");
+      // Use "auto" to auto-detect source language, translate to English
+      const result = await translate(text, "auto", "en");
       const trimmedText = result?.translatedText?.trim();
-      if (trimmedText) {
+      // Show translation if we have text and it wasn't skipped (same language)
+      if (trimmedText && !result?.skipped) {
         setTranslations(prev => ({
           ...prev,
           [messageId]: trimmedText,

@@ -179,7 +179,9 @@ export function useTranslation() {
 
   /**
    * Initialize translation service and download models
-   * This may take a while on first run as it downloads models (~150MB)
+   * This may take a while on first run as it downloads models (~800MB total)
+   * - Translation model: ~600MB (NLLB-200-distilled-600M)
+   * - Language detection model: ~200MB (bert-base-multilingual-cased)
    *
    * IMPORTANT: This coordinates with XMTP sync to prevent database corruption.
    * The translation download and XMTP sync are both heavy I/O operations that
