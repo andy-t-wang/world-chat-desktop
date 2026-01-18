@@ -42,13 +42,7 @@ export async function getSessionCache(): Promise<SessionCache | null> {
     const cached = localStorage.getItem(XMTP_SESSION_KEY);
     if (!cached) return null;
 
-    const session: SessionCache = JSON.parse(cached);
-    // Check if session is not too old (7 days)
-    const maxAge = 7 * 24 * 60 * 60 * 1000;
-    if (Date.now() - session.timestamp < maxAge) {
-      return session;
-    }
-    return null;
+    return JSON.parse(cached) as SessionCache;
   } catch {
     return null;
   }
@@ -127,11 +121,7 @@ export function hasSessionSync(): boolean {
 
     const cached = localStorage.getItem(XMTP_SESSION_KEY);
     if (cached) {
-      const session = JSON.parse(cached);
-      const maxAge = 7 * 24 * 60 * 60 * 1000;
-      if (session.timestamp && Date.now() - session.timestamp < maxAge) {
-        return true;
-      }
+      return true;
     }
     return false;
   } catch {
