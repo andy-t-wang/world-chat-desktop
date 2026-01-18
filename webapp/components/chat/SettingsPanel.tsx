@@ -332,7 +332,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
                     <p className="text-[14px] text-[var(--text-primary)]">Private Translations</p>
                     <p className="text-[12px] text-[var(--text-secondary)]">
                       {isInitializing
-                        ? "Downloading..."
+                        ? translationProgress?.timeEstimate || "Downloading..."
                         : isDeletingModels
                         ? "Removing..."
                         : isInitialized

@@ -28,6 +28,7 @@ interface TranslationProgress {
   status: string;
   progress: number;
   file?: string;
+  timeEstimate?: string;
 }
 
 // Shared atoms for translation state (so all components see the same state)

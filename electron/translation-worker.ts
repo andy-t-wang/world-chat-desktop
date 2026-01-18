@@ -34,8 +34,12 @@ let pendingInitCallbacks: Array<{ id: string }> = [];
 
 // Track download progress across multiple files
 const fileProgress: Map<string, number> = new Map();
+const fileSizes: Map<string, { loaded: number; total: number }> = new Map();
 const MODEL_FILE_COUNT = 6; // Approximate number of model files
 let lastReportedProgress = -1;
+let downloadStartTime = 0;
+let lastProgressTime = 0;
+let lastTotalLoaded = 0;
 
 interface WorkerMessage {
   id: string;
@@ -98,6 +102,10 @@ process.on('message', async (msg: WorkerMessage) => {
         }
 
         console.log('[TranslationWorker] Transformers loaded, starting model download...');
+        downloadStartTime = Date.now();
+        lastProgressTime = downloadStartTime;
+        lastTotalLoaded = 0;
+
         send({
           type: 'progress',
           payload: {
@@ -118,29 +126,70 @@ process.on('message', async (msg: WorkerMessage) => {
               const fileName = progress.file || progress.name || '';
               const currentFileProgress = progress.progress || 0;
 
-              console.log('[TranslationWorker] Progress callback:', progress.status, fileName, currentFileProgress);
+              console.log('[TranslationWorker] Progress callback:', progress.status, fileName, currentFileProgress, progress.loaded, progress.total);
 
-              // Track progress per file
+              // Track progress and sizes per file
               if (fileName) {
                 fileProgress.set(fileName, progress.status === 'done' ? 100 : currentFileProgress);
+                if (progress.loaded !== undefined && progress.total !== undefined) {
+                  fileSizes.set(fileName, { loaded: progress.loaded, total: progress.total });
+                }
               }
 
-              // Calculate overall progress from all tracked files
-              let totalProgress = 0;
-              fileProgress.forEach((p) => { totalProgress += p; });
-              const overallProgress = Math.floor((totalProgress / MODEL_FILE_COUNT));
+              // Calculate total bytes loaded and total size across all files
+              let totalLoaded = 0;
+              let totalSize = 0;
+              fileSizes.forEach(({ loaded, total }) => {
+                totalLoaded += loaded;
+                totalSize += total;
+              });
+
+              // Calculate overall progress based on bytes (more accurate than file count)
+              let overallProgress: number;
+              if (totalSize > 0) {
+                overallProgress = Math.floor((totalLoaded / totalSize) * 100);
+              } else {
+                // Fallback to file-based progress
+                let fileProgressSum = 0;
+                fileProgress.forEach((p) => { fileProgressSum += p; });
+                overallProgress = Math.floor(fileProgressSum / MODEL_FILE_COUNT);
+              }
+
+              // Calculate time estimate
+              const now = Date.now();
+              const elapsedMs = now - downloadStartTime;
+              let estimatedSecondsRemaining: number | null = null;
+
+              if (totalLoaded > 0 && totalSize > 0 && elapsedMs > 2000) {
+                const bytesPerMs = totalLoaded / elapsedMs;
+                const remainingBytes = totalSize - totalLoaded;
+                estimatedSecondsRemaining = Math.ceil(remainingBytes / bytesPerMs / 1000);
+              }
 
               // Only report if progress increased (prevents flickering)
               if (overallProgress > lastReportedProgress) {
                 lastReportedProgress = overallProgress;
+
+                // Format time estimate
+                let timeEstimate: string | undefined;
+                if (estimatedSecondsRemaining !== null && estimatedSecondsRemaining > 0) {
+                  if (estimatedSecondsRemaining < 60) {
+                    timeEstimate = `${estimatedSecondsRemaining}s remaining`;
+                  } else {
+                    const mins = Math.ceil(estimatedSecondsRemaining / 60);
+                    timeEstimate = `${mins} min remaining`;
+                  }
+                }
+
                 send({
                   type: 'progress',
                   payload: {
                     status: progress.status || 'downloading',
                     progress: Math.min(99, overallProgress), // Cap at 99 until fully done
                     file: fileName,
-                    loaded: progress.loaded,
-                    total: progress.total,
+                    loaded: totalLoaded,
+                    total: totalSize,
+                    timeEstimate,
                   },
                 });
               }
