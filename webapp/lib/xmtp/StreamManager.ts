@@ -459,6 +459,8 @@ class XMTPStreamManager {
    * 4. Never sync again - rely on streams
    */
   async initialize(client: AnyClient): Promise<void> {
+    console.log('[StreamManager] initialize() called, client inboxId:', client.inboxId);
+
     // Clean up any existing state
     this.cleanup();
 
@@ -482,7 +484,9 @@ class XMTPStreamManager {
     this.fetchCurrentUserUsername();
 
     // Phase 1: Load from local cache (instant)
+    console.log('[StreamManager] Phase 1: Loading conversations from cache...');
     const hasCachedConversations = await this.loadConversationsFromCache();
+    console.log('[StreamManager] Phase 1 complete, hasCachedConversations:', hasCachedConversations);
 
     // Phase 2: Start streams for real-time updates
     this.startConversationStream();
@@ -713,9 +717,11 @@ class XMTPStreamManager {
       // Load from local cache only (no network, instant)
       // Include both Allowed and Unknown so we don't miss conversations
       // that were Allowed on another device but haven't synced consent yet
+      console.log('[StreamManager] Calling client.conversations.list()...');
       const localConversations = await this.client.conversations.list({
         consentStates: [ConsentState.Allowed, ConsentState.Unknown],
       });
+      console.log('[StreamManager] conversations.list() returned', localConversations.length, 'conversations');
 
       const ids: string[] = [];
 
@@ -856,7 +862,9 @@ class XMTPStreamManager {
 
       return hasCachedConversations;
     } catch (error) {
-      console.error('[StreamManager] Failed to load conversations:', error);
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      console.error('[StreamManager] Failed to load conversations:', errorMsg);
+      console.error('[StreamManager] Full error:', error);
       store.set(conversationsErrorAtom, error instanceof Error ? error : new Error('Failed to load'));
       store.set(isLoadingConversationsAtom, false);
       return false;

@@ -118,7 +118,9 @@ export function useQRXmtpClient(): UseQRXmtpClientResult {
     }
 
     const cachedSession = await getSessionCache();
+    console.log('[QRXmtpClient] Cached session:', cachedSession ? { address: cachedSession.address, inboxId: cachedSession.inboxId, age: Date.now() - cachedSession.timestamp } : null);
     if (!cachedSession) {
+      console.log('[QRXmtpClient] No cached session, need QR login');
       return false;
     }
 
@@ -150,6 +152,7 @@ export function useQRXmtpClient(): UseQRXmtpClientResult {
 
       // Use Client.build() for faster session restoration
       // This skips signer initialization since the client is already registered
+      console.log('[QRXmtpClient] Attempting Client.build() for session restore...');
       const xmtpClient = await Client.build(
         {
           identifier: cachedSession.address.toLowerCase(),
@@ -172,6 +175,8 @@ export function useQRXmtpClient(): UseQRXmtpClientResult {
         }
       );
 
+      console.log('[QRXmtpClient] Client.build() succeeded, inboxId:', xmtpClient.inboxId);
+
       // Update cache timestamp (async, don't await)
       if (xmtpClient.inboxId) {
         setSessionCache(cachedSession.address, xmtpClient.inboxId);
@@ -180,6 +185,7 @@ export function useQRXmtpClient(): UseQRXmtpClientResult {
       dispatch({ type: "INIT_SUCCESS", client: xmtpClient });
 
       // Initialize StreamManager in background (don't block UI)
+      console.log('[QRXmtpClient] Starting StreamManager.initialize()...');
       streamManager.initialize(xmtpClient).catch((error) => {
         console.error(
           "[QRXmtpClient] StreamManager initialization error:",
@@ -190,6 +196,7 @@ export function useQRXmtpClient(): UseQRXmtpClientResult {
       return true;
     } catch (error) {
       console.error("[QRXmtpClient] Failed to restore session:", error);
+      console.error("[QRXmtpClient] Error details:", error instanceof Error ? { name: error.name, message: error.message, stack: error.stack } : error);
 
       // Release the tab lock on failure
       releaseTabLock();
