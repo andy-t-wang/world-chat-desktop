@@ -472,11 +472,60 @@ process.on('message', async (msg: WorkerMessage) => {
   } catch (error) {
     console.error('[TranslationWorker] Error:', error);
     isInitializing = false;
-    send({
-      id,
-      type: 'error',
-      payload: error instanceof Error ? error.message : String(error),
-    });
+
+    const errorMessage = error instanceof Error ? error.message : String(error);
+
+    // Detect corrupted cache errors and auto-clear
+    const isCorruptedCache =
+      errorMessage.includes('protobuf parsing failed') ||
+      errorMessage.includes('Failed to parse') ||
+      errorMessage.includes('Invalid model') ||
+      errorMessage.includes('corrupted') ||
+      errorMessage.includes('Unexpected end of');
+
+    if (isCorruptedCache && cacheDir) {
+      console.log('[TranslationWorker] Detected corrupted cache, clearing and will retry...');
+
+      // Clear the cache directory
+      try {
+        const fs = await import('fs');
+        const path = await import('path');
+
+        // Delete all files in cache directory
+        if (fs.existsSync(cacheDir)) {
+          const files = fs.readdirSync(cacheDir);
+          for (const file of files) {
+            const filePath = path.join(cacheDir, file);
+            try {
+              const stat = fs.statSync(filePath);
+              if (stat.isDirectory()) {
+                fs.rmSync(filePath, { recursive: true, force: true });
+              } else {
+                fs.unlinkSync(filePath);
+              }
+            } catch (e) {
+              console.error('[TranslationWorker] Failed to delete:', filePath, e);
+            }
+          }
+          console.log('[TranslationWorker] Cache cleared, please retry initialization');
+        }
+      } catch (clearError) {
+        console.error('[TranslationWorker] Failed to clear cache:', clearError);
+      }
+
+      // Send error with clear instruction
+      send({
+        id,
+        type: 'error',
+        payload: 'Model cache was corrupted and has been cleared. Please try again.',
+      });
+    } else {
+      send({
+        id,
+        type: 'error',
+        payload: errorMessage,
+      });
+    }
   }
 });
 
