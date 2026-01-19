@@ -520,12 +520,22 @@ process.on('message', async (msg: WorkerMessage) => {
         type: 'error',
         payload: 'Model cache was corrupted and has been cleared. Please try again.',
       });
+
+      // Exit worker after fatal error - main process will clean up
+      console.log('[TranslationWorker] Exiting after fatal error (corrupted cache)');
+      process.exit(1);
     } else {
       send({
         id,
         type: 'error',
         payload: errorMessage,
       });
+
+      // Exit worker after initialization failure - don't leave in bad state
+      if (type === 'initialize') {
+        console.log('[TranslationWorker] Exiting after initialization failure');
+        process.exit(1);
+      }
     }
   }
 });

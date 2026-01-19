@@ -313,8 +313,16 @@ function setupIpcHandlers() {
       return result;
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
-      debugLog('Translation', 'Initialize FAILED', { error: errorMsg });
+      debugLog('Translation', 'Initialize FAILED - stopping worker and clearing preference', { error: errorMsg });
+
+      // Stop the worker process completely on failure
+      stopTranslationProcess();
+
+      // Clear the enabled preference so it won't auto-retry on restart
+      setSecureData({ translationEnabled: false });
+
       translationInitializing = false;
+      translationReady = false;
       lastTranslationProgress = null;
       throw error;
     }
