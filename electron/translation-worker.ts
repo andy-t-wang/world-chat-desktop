@@ -39,29 +39,30 @@ const LANGUAGE_MAP: Record<string, string> = {
 };
 
 // Language detection model label -> short code mapping
-// papluca/xlm-roberta-base-language-detection uses full language names
+// qmaru/language_detection outputs NLLB-style codes like "eng_Latn", "fra_Latn"
 const LANG_DETECT_MAP: Record<string, string> = {
-  english: 'en',
-  spanish: 'es',
-  french: 'fr',
-  german: 'de',
-  portuguese: 'pt',
-  chinese: 'zh',
-  japanese: 'ja',
-  korean: 'ko',
-  arabic: 'ar',
-  hindi: 'hi',
-  italian: 'it',
-  dutch: 'nl',
-  polish: 'pl',
-  russian: 'ru',
-  turkish: 'tr',
-  vietnamese: 'vi',
-  thai: 'th',
-  greek: 'el',
-  bulgarian: 'bg',
-  urdu: 'ur',
-  swahili: 'sw',
+  eng_latn: 'en',
+  spa_latn: 'es',
+  fra_latn: 'fr',
+  deu_latn: 'de',
+  por_latn: 'pt',
+  zho_hans: 'zh',
+  zho_hant: 'zh',
+  jpn_jpan: 'ja',
+  kor_hang: 'ko',
+  arb_arab: 'ar',
+  hin_deva: 'hi',
+  ita_latn: 'it',
+  nld_latn: 'nl',
+  pol_latn: 'pl',
+  rus_cyrl: 'ru',
+  tur_latn: 'tr',
+  vie_latn: 'vi',
+  tha_thai: 'th',
+  ell_grek: 'el',
+  bul_cyrl: 'bg',
+  urd_arab: 'ur',
+  swh_latn: 'sw',
 };
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -125,7 +126,7 @@ process.on('message', async (msg: WorkerMessage) => {
               if (cacheDir) env.cacheDir = cacheDir;
               langDetector = await pipeline(
                 'text-classification',
-                'onnx-community/xlm-roberta-base-language-detection',
+                'qmaru/language_detection',
                 { device: 'cpu' }
               );
               console.log('[TranslationWorker] Language detector loaded in background');
@@ -305,7 +306,7 @@ process.on('message', async (msg: WorkerMessage) => {
 
         langDetector = await pipeline(
           'text-classification',
-          'onnx-community/xlm-roberta-base-language-detection',
+          'qmaru/language_detection',
           {
             device: 'cpu',
             progress_callback: progressCallback,
