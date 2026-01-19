@@ -247,6 +247,8 @@ declare global {
       removeNickname: (address: string) => Promise<void>;
       getVersion: () => Promise<string>;
       getPlatform: () => Promise<string>;
+      // Shutdown notification (before update install)
+      onPrepareForShutdown: (callback: () => void) => () => void;
       // Translation API
       translation?: {
         isAvailable: () => Promise<boolean>;

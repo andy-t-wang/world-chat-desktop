@@ -183,16 +183,43 @@ function setupIpcHandlers() {
     return autoUpdater.downloadUpdate();
   });
 
-  ipcMain.handle('update:install', () => {
-    // Force quit and install - destroy window first to avoid macOS hide behavior
+  ipcMain.handle('update:install', async () => {
+    // Graceful shutdown before update to prevent database corruption
     isQuitting = true;
+    console.log('[Update] Starting graceful shutdown before install...');
+
+    // 1. Stop translation worker first (frees resources)
+    if (translationProcess) {
+      console.log('[Update] Stopping translation worker...');
+      try {
+        translationProcess.kill('SIGTERM');
+        translationProcess = null;
+        translationReady = false;
+      } catch (e) {
+        console.error('[Update] Error stopping translation worker:', e);
+      }
+    }
+
+    // 2. Notify renderer to prepare for shutdown (cleanup streams, pending writes)
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      console.log('[Update] Notifying renderer to prepare for shutdown...');
+      mainWindow.webContents.send('app:prepareForShutdown');
+    }
+
+    // 3. Wait for pending database operations to complete
+    // This gives XMTP time to commit any pending transactions
+    console.log('[Update] Waiting for cleanup...');
+    await new Promise(resolve => setTimeout(resolve, 1000));
+
+    // 4. Now proceed with forced quit
+    console.log('[Update] Proceeding with quit and install...');
 
     // Remove all listeners that might prevent quit
     app.removeAllListeners('window-all-closed');
     app.removeAllListeners('before-quit');
 
     // Destroy the window explicitly (bypass the close handler)
-    if (mainWindow) {
+    if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.destroy();
       mainWindow = null;
     }

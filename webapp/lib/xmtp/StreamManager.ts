@@ -416,6 +416,21 @@ class XMTPStreamManager {
   private conversationStreamController: AbortController | null = null;
   private allMessagesStreamController: AbortController | null = null;
 
+  // Cleanup function for shutdown listener
+  private shutdownCleanup: (() => void) | null = null;
+
+  constructor() {
+    // Register for shutdown notification from Electron (before update install)
+    // This gives us time to cleanup streams and let pending database writes complete
+    if (typeof window !== 'undefined' && window.electronAPI?.onPrepareForShutdown) {
+      console.log('[StreamManager] Registering for shutdown notification');
+      this.shutdownCleanup = window.electronAPI.onPrepareForShutdown(() => {
+        console.log('[StreamManager] Received shutdown notification, cleaning up...');
+        this.cleanup();
+      });
+    }
+  }
+
   // Track what's been loaded to prevent duplicates
   private conversationsLoaded = false;
   private loadedMessageConversations = new Set<string>();

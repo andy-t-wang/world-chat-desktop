@@ -90,6 +90,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return ipcRenderer.invoke('app:focusWindow');
   },
 
+  /** Listen for app shutdown preparation (cleanup before update) */
+  onPrepareForShutdown: (callback: () => void): (() => void) => {
+    const handler = () => callback();
+    ipcRenderer.on('app:prepareForShutdown', handler);
+    return () => {
+      ipcRenderer.removeListener('app:prepareForShutdown', handler);
+    };
+  },
+
   // =========================================================================
   // Auto-Updater
   // =========================================================================
@@ -219,6 +228,7 @@ declare global {
       getPlatform: () => Promise<string>;
       setBadgeCount: (count: number) => Promise<void>;
       focusWindow: () => Promise<void>;
+      onPrepareForShutdown: (callback: () => void) => () => void;
       // Auto-updater
       checkForUpdates: () => Promise<void>;
       downloadUpdate: () => Promise<void>;
