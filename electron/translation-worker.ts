@@ -125,7 +125,7 @@ process.on('message', async (msg: WorkerMessage) => {
               if (cacheDir) env.cacheDir = cacheDir;
               langDetector = await pipeline(
                 'text-classification',
-                'Xenova/bert-base-multilingual-cased-finetuned-language-detection',
+                'onnx-community/xlm-roberta-base-language-detection',
                 { device: 'cpu' }
               );
               console.log('[TranslationWorker] Language detector loaded in background');
@@ -305,7 +305,7 @@ process.on('message', async (msg: WorkerMessage) => {
 
         langDetector = await pipeline(
           'text-classification',
-          'Xenova/bert-base-multilingual-cased-finetuned-language-detection',
+          'onnx-community/xlm-roberta-base-language-detection',
           {
             device: 'cpu',
             progress_callback: progressCallback,
