@@ -474,14 +474,15 @@ process.on('message', async (msg: WorkerMessage) => {
     isInitializing = false;
 
     const errorMessage = error instanceof Error ? error.message : String(error);
+    const errorLower = errorMessage.toLowerCase();
 
-    // Detect corrupted cache errors and auto-clear
+    // Detect corrupted cache errors and auto-clear (case-insensitive)
     const isCorruptedCache =
-      errorMessage.includes('protobuf parsing failed') ||
-      errorMessage.includes('Failed to parse') ||
-      errorMessage.includes('Invalid model') ||
-      errorMessage.includes('corrupted') ||
-      errorMessage.includes('Unexpected end of');
+      errorLower.includes('protobuf parsing failed') ||
+      errorLower.includes('failed to parse') ||
+      errorLower.includes('invalid model') ||
+      errorLower.includes('corrupted') ||
+      errorLower.includes('unexpected end of');
 
     if (isCorruptedCache && cacheDir) {
       console.log('[TranslationWorker] Detected corrupted cache, clearing and will retry...');
