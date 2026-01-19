@@ -249,6 +249,9 @@ declare global {
       getPlatform: () => Promise<string>;
       // Shutdown notification (before update install)
       onPrepareForShutdown: (callback: () => void) => () => void;
+      // Debug logging (persists to file)
+      debugLog: (source: string, message: string, data?: unknown) => Promise<void>;
+      getDebugLog: () => Promise<string>;
       // Translation API
       translation?: {
         isAvailable: () => Promise<boolean>;

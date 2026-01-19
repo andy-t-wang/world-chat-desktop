@@ -1503,11 +1503,6 @@ export function MessagePanel({
 
       const typeId = (msg.contentType as { typeId?: string })?.typeId;
 
-      // Debug: log all message types to see what's coming through
-      if (typeId && typeId !== "text" && typeId !== "readReceipt") {
-        console.log('[MessageProcessing] typeId:', typeId, 'contentType:', msg.contentType, 'content keys:', msg.content ? Object.keys(msg.content as object) : 'null');
-      }
-
       if (typeId === "readReceipt") continue;
 
       // Check if has displayable content
@@ -2423,11 +2418,6 @@ export function MessagePanel({
                   // Check if this is a transaction reference (payment message)
                   const typeId = (msg.contentType as { typeId?: string })
                     ?.typeId;
-
-                  // Debug: log all non-text message types being rendered
-                  if (typeId && typeId !== "text") {
-                    console.log('[Render] typeId:', typeId, 'msgId:', item.id, 'content:', msg.content ? Object.keys(msg.content as object) : 'null');
-                  }
 
                   // Try to get transaction content - may need to decode from fallback
                   let txContent = msg.content;

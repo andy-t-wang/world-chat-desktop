@@ -425,8 +425,16 @@ class XMTPStreamManager {
     if (typeof window !== 'undefined' && window.electronAPI?.onPrepareForShutdown) {
       console.log('[StreamManager] Registering for shutdown notification');
       this.shutdownCleanup = window.electronAPI.onPrepareForShutdown(() => {
-        console.log('[StreamManager] Received shutdown notification, cleaning up...');
+        const state = {
+          translationInProgress: this.translationInProgress,
+          syncing: this.isSyncing(),
+          hasClient: !!this.client,
+          loaded: this.conversationsLoaded,
+        };
+        console.log('[StreamManager] Received shutdown notification, cleaning up...', state);
+        window.electronAPI?.debugLog?.('StreamManager', 'Shutdown notification received', state);
         this.cleanup();
+        window.electronAPI?.debugLog?.('StreamManager', 'Cleanup completed');
       });
     }
   }
@@ -483,7 +491,9 @@ class XMTPStreamManager {
    * Call this before starting translation download, clear when done
    */
   setTranslationInProgress(inProgress: boolean): void {
-    console.log('[StreamManager] Translation in progress:', inProgress);
+    const timestamp = new Date().toISOString();
+    console.log(`[StreamManager] [${timestamp}] Translation in progress: ${inProgress}`);
+    console.log(`[StreamManager] State: syncing=${this.isSyncing()}, corrupted=${this.databaseCorrupted}, loaded=${this.conversationsLoaded}, hasClient=${!!this.client}`);
     this.translationInProgress = inProgress;
   }
 
@@ -508,12 +518,22 @@ class XMTPStreamManager {
    */
   private checkForDatabaseCorruption(error: unknown): boolean {
     const errorStr = String(error);
+    const state = {
+      translationInProgress: this.translationInProgress,
+      syncing: this.isSyncing(),
+      loaded: this.conversationsLoaded,
+      hasClient: !!this.client,
+    };
+
+    // Log all XMTP errors for debugging (persistent log)
+    console.error(`[StreamManager] XMTP Error:`, errorStr, state);
+    window.electronAPI?.debugLog?.('StreamManager', 'XMTP Error', { error: errorStr, state });
+
     if (errorStr.includes('database disk image is malformed') ||
         errorStr.includes('SQLITE_CORRUPT') ||
         errorStr.includes('SqlKeyStore') && errorStr.includes('malformed')) {
-      console.error('[StreamManager] DATABASE CORRUPTION DETECTED');
-      console.error('[StreamManager] The XMTP database has become corrupted.');
-      console.error('[StreamManager] To fix: Clear site data for this app and re-login.');
+      console.error('[StreamManager] *** DATABASE CORRUPTION DETECTED ***');
+      window.electronAPI?.debugLog?.('StreamManager', '*** DATABASE CORRUPTION DETECTED ***', state);
       this.databaseCorrupted = true;
       return true;
     }

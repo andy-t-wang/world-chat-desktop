@@ -8,8 +8,33 @@ import * as os from 'os';
 
 // Paths
 const STORAGE_FILE = path.join(app.getPath('userData'), 'secure-storage.enc');
+const DEBUG_LOG_FILE = path.join(app.getPath('userData'), 'debug.log');
 const DEV_SERVER_URL = 'http://localhost:3000';
 const PRODUCTION_URL = 'https://world-chat-web.vercel.app';
+
+// Debug logging - persists to file for debugging across restarts
+function debugLog(source: string, message: string, data?: unknown): void {
+  const timestamp = new Date().toISOString();
+  const logLine = `[${timestamp}] [${source}] ${message}${data ? ' ' + JSON.stringify(data) : ''}\n`;
+
+  // Also log to console
+  console.log(logLine.trim());
+
+  // Append to file (keep last 500 lines to avoid huge files)
+  try {
+    let existing = '';
+    if (fs.existsSync(DEBUG_LOG_FILE)) {
+      existing = fs.readFileSync(DEBUG_LOG_FILE, 'utf8');
+      const lines = existing.split('\n');
+      if (lines.length > 500) {
+        existing = lines.slice(-250).join('\n') + '\n';
+      }
+    }
+    fs.writeFileSync(DEBUG_LOG_FILE, existing + logLine);
+  } catch (e) {
+    console.error('Failed to write debug log:', e);
+  }
+}
 
 // State
 let mainWindow: BrowserWindow | null = null;
@@ -152,6 +177,23 @@ function setupIpcHandlers() {
     return process.platform;
   });
 
+  // Debug logging - persists to file for debugging across restarts
+  ipcMain.handle('app:debugLog', (_, source: string, message: string, data?: unknown) => {
+    debugLog(source, message, data);
+  });
+
+  // Get debug log contents
+  ipcMain.handle('app:getDebugLog', () => {
+    try {
+      if (fs.existsSync(DEBUG_LOG_FILE)) {
+        return fs.readFileSync(DEBUG_LOG_FILE, 'utf8');
+      }
+    } catch (e) {
+      console.error('Failed to read debug log:', e);
+    }
+    return '';
+  });
+
   // Dock badge (macOS)
   ipcMain.handle('app:setBadgeCount', (_, count: number) => {
     if (process.platform === 'darwin' && app.dock) {
@@ -186,33 +228,37 @@ function setupIpcHandlers() {
   ipcMain.handle('update:install', async () => {
     // Graceful shutdown before update to prevent database corruption
     isQuitting = true;
-    console.log('[Update] Starting graceful shutdown before install...');
+    debugLog('Update', 'Starting graceful shutdown before install', {
+      translationReady,
+      translationInitializing,
+      hasTranslationProcess: !!translationProcess,
+    });
 
     // 1. Stop translation worker first (frees resources)
     if (translationProcess) {
-      console.log('[Update] Stopping translation worker...');
+      debugLog('Update', 'Stopping translation worker...');
       try {
         translationProcess.kill('SIGTERM');
         translationProcess = null;
         translationReady = false;
       } catch (e) {
-        console.error('[Update] Error stopping translation worker:', e);
+        debugLog('Update', 'Error stopping translation worker', { error: String(e) });
       }
     }
 
     // 2. Notify renderer to prepare for shutdown (cleanup streams, pending writes)
     if (mainWindow && !mainWindow.isDestroyed()) {
-      console.log('[Update] Notifying renderer to prepare for shutdown...');
+      debugLog('Update', 'Notifying renderer to prepare for shutdown');
       mainWindow.webContents.send('app:prepareForShutdown');
     }
 
     // 3. Wait for pending database operations to complete
     // This gives XMTP time to commit any pending transactions
-    console.log('[Update] Waiting for cleanup...');
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    debugLog('Update', 'Waiting 2s for cleanup...');
+    await new Promise(resolve => setTimeout(resolve, 2000));
 
     // 4. Now proceed with forced quit
-    console.log('[Update] Proceeding with quit and install...');
+    debugLog('Update', 'Proceeding with quit and install');
 
     // Remove all listeners that might prevent quit
     app.removeAllListeners('window-all-closed');
@@ -246,14 +292,16 @@ function setupIpcHandlers() {
   });
 
   ipcMain.handle('translation:initialize', async () => {
+    debugLog('Translation', 'Initialize started');
     try {
       translationInitializing = true;
       // Send immediate "starting" progress so UI doesn't show 0% stuck
       lastTranslationProgress = { status: 'starting', progress: 1, file: '' };
       mainWindow?.webContents.send('translation:progress', lastTranslationProgress);
-      console.log('[Translation] Starting initialization...');
+      debugLog('Translation', 'Starting worker process...');
       // Start the utility process if not running
       await startTranslationProcess();
+      debugLog('Translation', 'Worker started, loading models...');
       // Initialize the translation model in the worker
       const result = await sendToWorker<{ success: boolean }>('initialize');
       translationReady = true;
@@ -261,9 +309,11 @@ function setupIpcHandlers() {
       lastTranslationProgress = null;
       // Save enabled preference on successful initialization
       setSecureData({ translationEnabled: true });
+      debugLog('Translation', 'Initialize completed successfully');
       return result;
     } catch (error) {
-      console.error('[Translation] Initialize failed:', error);
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      debugLog('Translation', 'Initialize FAILED', { error: errorMsg });
       translationInitializing = false;
       lastTranslationProgress = null;
       throw error;

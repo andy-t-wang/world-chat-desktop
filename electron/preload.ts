@@ -99,6 +99,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
     };
   },
 
+  /** Write to persistent debug log (survives app restarts) */
+  debugLog: (source: string, message: string, data?: unknown): Promise<void> => {
+    return ipcRenderer.invoke('app:debugLog', source, message, data);
+  },
+
+  /** Get contents of debug log */
+  getDebugLog: (): Promise<string> => {
+    return ipcRenderer.invoke('app:getDebugLog');
+  },
+
   // =========================================================================
   // Auto-Updater
   // =========================================================================
@@ -229,6 +239,8 @@ declare global {
       setBadgeCount: (count: number) => Promise<void>;
       focusWindow: () => Promise<void>;
       onPrepareForShutdown: (callback: () => void) => () => void;
+      debugLog: (source: string, message: string, data?: unknown) => Promise<void>;
+      getDebugLog: () => Promise<string>;
       // Auto-updater
       checkForUpdates: () => Promise<void>;
       downloadUpdate: () => Promise<void>;

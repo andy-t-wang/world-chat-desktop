@@ -108,6 +108,12 @@ export function useTranslation() {
     if (initAttemptedRef.current) return;
     initAttemptedRef.current = true;
 
+    // Helper for persistent debug logging
+    const debugLog = (msg: string, data?: unknown) => {
+      console.log(`[useTranslation] ${msg}`, data || '');
+      window.electronAPI?.debugLog?.('useTranslation', msg, data);
+    };
+
     const checkAndRestore = async () => {
       if (!isElectron() || !window.electronAPI?.translation) return;
 
@@ -115,27 +121,31 @@ export function useTranslation() {
         // First check if already ready (models loaded in memory)
         const ready = await window.electronAPI.translation.isReady();
         if (ready) {
+          debugLog('Already initialized, skipping');
           setIsInitialized(true);
           return;
         }
 
         // Check if translation was previously enabled
         const wasEnabled = await window.electronAPI.translation.getEnabled();
+        debugLog('Check restore', { wasEnabled, isSyncing: streamManager.isSyncing() });
+
         if (wasEnabled) {
           // Auto-initialize in background
-          console.log("[useTranslation] Auto-initializing translation (was previously enabled)");
+          debugLog('Auto-initializing (was previously enabled)');
 
           // Wait for any in-progress XMTP sync to complete before starting
           // This prevents I/O contention that can cause database corruption
           if (streamManager.isSyncing()) {
-            console.log("[useTranslation] Waiting for XMTP sync before auto-init...");
+            debugLog('Waiting for XMTP sync before auto-init...');
             setProgress({ status: 'waiting', progress: 0, timeEstimate: 'Waiting for sync...' });
             await streamManager.waitForSyncComplete(60000);
+            debugLog('XMTP sync complete, proceeding');
           }
 
           // Check for database corruption before proceeding
           if (streamManager.isDatabaseCorrupted()) {
-            console.error("[useTranslation] Database corrupted, skipping auto-init");
+            debugLog('Database corrupted, skipping auto-init');
             return;
           }
 
@@ -143,23 +153,29 @@ export function useTranslation() {
 
           try {
             // Tell StreamManager that translation is starting
+            debugLog('Setting translationInProgress=true');
             streamManager.setTranslationInProgress(true);
 
+            debugLog('Calling translation.initialize()...');
             await window.electronAPI.translation.initialize();
+            debugLog('Initialize succeeded');
             setIsInitialized(true);
           } catch (err) {
-            console.error("[useTranslation] Auto-initialize failed:", err);
+            const errMsg = err instanceof Error ? err.message : String(err);
+            debugLog('Auto-initialize FAILED', { error: errMsg });
             // Clear the enabled preference if auto-init fails
             await window.electronAPI.translation.setEnabled(false);
           } finally {
             // Always clear the translation flag
+            debugLog('Setting translationInProgress=false (finally block)');
             streamManager.setTranslationInProgress(false);
             setIsInitializing(false);
             setProgress(null);
           }
         }
       } catch (err) {
-        console.error("[useTranslation] Check and restore failed:", err);
+        const errMsg = err instanceof Error ? err.message : String(err);
+        debugLog('Check and restore FAILED', { error: errMsg });
       }
     };
 
