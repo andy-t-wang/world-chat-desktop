@@ -2197,20 +2197,7 @@ export function MessagePanel({
 
         {/* Right side actions */}
         <div className="electron-no-drag flex items-center gap-1">
-          {/* Auto-translate toggle - only show if translation is enabled */}
-          {translationEnabled && (
-            <button
-              onClick={handleAutoTranslateToggle}
-              className={`h-8 px-3 flex items-center gap-1.5 rounded-full text-[13px] font-medium transition-colors cursor-pointer ${
-                autoTranslate
-                  ? "bg-[var(--accent-blue)] text-white"
-                  : "border border-[var(--accent-blue)] text-[var(--accent-blue)] hover:bg-[var(--accent-blue)]/10"
-              }`}
-            >
-              <Languages className="w-4 h-4" />
-              <span>{autoTranslate ? "Auto-translate on" : "Enable translation"}</span>
-            </button>
-          )}
+          {/* Placeholder for future header actions */}
         </div>
       </header>
 
@@ -3484,17 +3471,17 @@ export function MessagePanel({
               <Paperclip className="w-5 h-5 text-[var(--text-quaternary)]" />
             </button>
 
-            {/* Translate button - only show when translation is available */}
+            {/* Translation settings button - only show when translation is available */}
             {translationEnabled && (
               <div ref={languageSelectorRef} className="relative shrink-0">
                 <button
                   onClick={() => setShowLanguageSelector(!showLanguageSelector)}
                   className={`w-11 h-11 flex items-center justify-center rounded-xl transition-colors shrink-0 ${
-                    outgoingTranslateTo
+                    outgoingTranslateTo || autoTranslate
                       ? "bg-[var(--accent-blue)]/10"
                       : "hover:bg-[var(--bg-hover)] text-[var(--text-quaternary)]"
                   }`}
-                  title={outgoingTranslateTo ? `Translating to ${TRANSLATE_LANGUAGES.find(l => l.code === outgoingTranslateTo)?.name}` : "Translate message"}
+                  title="Translation settings"
                 >
                   {isTranslatingOutgoing ? (
                     <Loader2 className="w-5 h-5 animate-spin text-[var(--accent-blue)]" />
@@ -3504,31 +3491,57 @@ export function MessagePanel({
                       <span className="text-[10px] text-[var(--text-tertiary)]">→</span>
                       <span>{TRANSLATE_LANGUAGES.find(l => l.code === outgoingTranslateTo)?.flag}</span>
                     </span>
+                  ) : autoTranslate ? (
+                    <Languages className="w-5 h-5 text-[var(--accent-blue)]" />
                   ) : (
                     <Languages className="w-5 h-5" />
                   )}
                 </button>
 
-                {/* Language Selector Dropdown */}
+                {/* Translation Settings Dropdown */}
                 {showLanguageSelector && (
-                  <div className="absolute bottom-14 left-0 bg-[var(--bg-primary)] rounded-xl shadow-lg border border-[var(--border-default)] p-1.5 z-50">
-                    <div className="grid grid-cols-4 gap-1" style={{ width: '184px' }}>
-                      {TRANSLATE_LANGUAGES.map(lang => (
-                        <button
-                          key={lang.code}
-                          onClick={() => {
-                            setOutgoingTranslateTo(outgoingTranslateTo === lang.code ? null : lang.code);
-                            setShowLanguageSelector(false);
-                          }}
-                          className={`w-[44px] h-[44px] rounded-lg text-[11px] hover:bg-[var(--bg-hover)] transition-colors flex flex-col items-center justify-center gap-0.5 ${
-                            outgoingTranslateTo === lang.code ? "bg-[var(--accent-blue)]/10" : ""
-                          }`}
-                          title={lang.name}
-                        >
-                          <span className="text-[22px] leading-none">{lang.flag}</span>
-                          <span className={`font-medium ${outgoingTranslateTo === lang.code ? "text-[var(--accent-blue)]" : "text-[var(--text-tertiary)]"}`}>{lang.abbr}</span>
-                        </button>
-                      ))}
+                  <div className="absolute bottom-14 left-0 bg-[var(--bg-primary)] rounded-xl shadow-lg border border-[var(--border-default)] p-2 z-50" style={{ width: '220px' }}>
+                    {/* Incoming Messages Section */}
+                    <div className="mb-3">
+                      <div className="text-[11px] font-medium text-[var(--text-tertiary)] uppercase tracking-wide px-1 mb-1.5">
+                        Incoming messages
+                      </div>
+                      <button
+                        onClick={handleAutoTranslateToggle}
+                        className="w-full flex items-center justify-between px-2 py-2 rounded-lg hover:bg-[var(--bg-hover)] transition-colors"
+                      >
+                        <span className="text-[13px] text-[var(--text-primary)]">Auto-translate to English</span>
+                        <div className={`w-9 h-5 rounded-full transition-colors relative ${autoTranslate ? 'bg-[var(--accent-blue)]' : 'bg-[var(--border-default)]'}`}>
+                          <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${autoTranslate ? 'translate-x-4' : 'translate-x-0.5'}`} />
+                        </div>
+                      </button>
+                    </div>
+
+                    {/* Divider */}
+                    <div className="h-px bg-[var(--border-default)] mb-3" />
+
+                    {/* Outgoing Messages Section */}
+                    <div>
+                      <div className="text-[11px] font-medium text-[var(--text-tertiary)] uppercase tracking-wide px-1 mb-1.5">
+                        Outgoing messages (🇺🇸→)
+                      </div>
+                      <div className="grid grid-cols-4 gap-1">
+                        {TRANSLATE_LANGUAGES.map(lang => (
+                          <button
+                            key={lang.code}
+                            onClick={() => {
+                              setOutgoingTranslateTo(outgoingTranslateTo === lang.code ? null : lang.code);
+                            }}
+                            className={`w-[46px] h-[46px] rounded-lg text-[11px] hover:bg-[var(--bg-hover)] transition-colors flex flex-col items-center justify-center gap-0.5 ${
+                              outgoingTranslateTo === lang.code ? "bg-[var(--accent-blue)]/10" : ""
+                            }`}
+                            title={lang.name}
+                          >
+                            <span className="text-[22px] leading-none">{lang.flag}</span>
+                            <span className={`font-medium ${outgoingTranslateTo === lang.code ? "text-[var(--accent-blue)]" : "text-[var(--text-tertiary)]"}`}>{lang.abbr}</span>
+                          </button>
+                        ))}
+                      </div>
                     </div>
                   </div>
                 )}
