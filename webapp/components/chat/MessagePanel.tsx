@@ -3499,7 +3499,11 @@ export function MessagePanel({
                   {isTranslatingOutgoing ? (
                     <Loader2 className="w-5 h-5 animate-spin text-[var(--accent-blue)]" />
                   ) : outgoingTranslateTo ? (
-                    <span className="text-[20px] h-5 flex items-center justify-center">{TRANSLATE_LANGUAGES.find(l => l.code === outgoingTranslateTo)?.flag}</span>
+                    <span className="text-[14px] h-5 flex items-center justify-center gap-0.5">
+                      <span>🇺🇸</span>
+                      <span className="text-[10px] text-[var(--text-tertiary)]">→</span>
+                      <span>{TRANSLATE_LANGUAGES.find(l => l.code === outgoingTranslateTo)?.flag}</span>
+                    </span>
                   ) : (
                     <Languages className="w-5 h-5" />
                   )}
