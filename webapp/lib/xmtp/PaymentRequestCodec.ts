@@ -167,32 +167,23 @@ export function createPaymentRequest(params: {
  */
 export function isPaymentRequest(content: unknown): content is PaymentRequest {
   if (!content || typeof content !== 'object') {
-    console.log('[PYMT-DBG] isPaymentRequest - Failed: content is null or not object', content);
     return false;
   }
   const req = content as Record<string, unknown>;
   const metadata = req.metadata as Record<string, unknown> | undefined;
   const amountType = typeof metadata?.amount;
 
-  const checks = {
-    requestId: typeof req.requestId === 'string',
-    networkId: typeof req.networkId === 'number',
-    metadataExists: req.metadata !== null && req.metadata !== undefined,
-    metadataIsObject: typeof req.metadata === 'object',
-    tokenSymbol: typeof metadata?.tokenSymbol === 'string',
+  return (
+    typeof req.requestId === 'string' &&
+    typeof req.networkId === 'number' &&
+    req.metadata !== null &&
+    req.metadata !== undefined &&
+    typeof req.metadata === 'object' &&
+    typeof metadata?.tokenSymbol === 'string' &&
     // World App sends amount as number, we accept both string and number
-    amount: amountType === 'string' || amountType === 'number',
-    toAddress: typeof metadata?.toAddress === 'string',
-  };
-
-  const allPassed = Object.values(checks).every(Boolean);
-  if (!allPassed) {
-    console.log('[PYMT-DBG] isPaymentRequest - Validation failed:', checks, 'content:', req);
-  } else {
-    console.log('[PYMT-DBG] isPaymentRequest - PASSED');
-  }
-
-  return allPassed;
+    (amountType === 'string' || amountType === 'number') &&
+    typeof metadata?.toAddress === 'string'
+  );
 }
 
 /**

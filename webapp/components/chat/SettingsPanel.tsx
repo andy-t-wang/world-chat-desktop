@@ -42,6 +42,7 @@ import {
   getSessionCache,
   clearSessionCache,
   deleteXmtpDatabase,
+  deleteAllXmtpDatabases,
 } from "@/lib/storage";
 
 interface SettingsPanelProps {
@@ -162,23 +163,19 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
     if (isLoggingOut) return;
     setIsLoggingOut(true);
     try {
-      // Get inboxId before clearing session
-      const session = await getSessionCache();
-
       // Cleanup streams first
       streamManager.cleanup();
 
-      // Delete XMTP database to allow recovery from corruption
-      // History sync will recover messages from the network on next login
-      if (session?.inboxId) {
-        await deleteXmtpDatabase(session.inboxId);
-      }
-
-      // Clear session
+      // Clear session data
       clearSession();
       await clearSessionCache();
 
-      // Redirect to login
+      // Set flag to delete database on next startup (before XMTP client is created)
+      // This is necessary because WASM holds a file lock on the database
+      localStorage.setItem('xmtp-pending-db-clear', 'true');
+      console.log('[Logout] Set pending DB clear flag');
+
+      // Redirect to login - database will be deleted on next startup
       window.location.href = "/";
     } catch (error) {
       console.error("Logout failed:", error);

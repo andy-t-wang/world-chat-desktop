@@ -250,7 +250,10 @@ process.on('message', async (msg: WorkerMessage) => {
             let timeEstimate: string | undefined;
             let statusMessage: string;
 
-            if (isDownloading) {
+            if (overallProgress >= 90) {
+              // Near completion - show initializing message
+              statusMessage = 'Initializing models...';
+            } else if (isDownloading) {
               // Downloading new models
               if (estimatedSecondsRemaining !== null && estimatedSecondsRemaining > 0) {
                 if (estimatedSecondsRemaining < 60) {
@@ -263,7 +266,7 @@ process.on('message', async (msg: WorkerMessage) => {
               statusMessage = timeEstimate || 'Downloading models...';
             } else {
               // Loading from cache
-              statusMessage = 'Loading model from cache...';
+              statusMessage = 'Loading from cache...';
             }
 
             send({
@@ -395,12 +398,15 @@ process.on('message', async (msg: WorkerMessage) => {
             const detectResult = await langDetector(text, { topk: 1 });
             const detected = detectResult[0];
             const langLabel = (detected?.label || '').toLowerCase();
-            from = LANG_DETECT_MAP[langLabel] || 'en'; // Default to English if unknown
-            console.log('[TranslationWorker] Auto-detected:', langLabel, '->', from, 'confidence:', detected?.score);
+            const mappedLang = LANG_DETECT_MAP[langLabel];
+            const confidence = detected?.score || 0;
+            from = mappedLang || 'en';
+            console.log('[TranslationWorker] Auto-detected:', langLabel, '->', from, 'mapped:', !!mappedLang, 'confidence:', confidence);
 
-            // If detected language is the same as target, skip translation
-            if (from === to) {
-              console.log('[TranslationWorker] Source and target are the same, skipping translation');
+            // Only skip if HIGH confidence (>0.8) detection matches target language
+            // Low confidence or unmapped languages should still attempt translation
+            if (mappedLang && mappedLang === to && confidence > 0.8) {
+              console.log('[TranslationWorker] Source and target are the same (high confidence), skipping');
               send({
                 id,
                 type: 'result',

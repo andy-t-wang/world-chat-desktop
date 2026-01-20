@@ -2508,29 +2508,6 @@ export function MessagePanel({
                   // Check for payment request/fulfillment content
                   let paymentContent = msg.content;
 
-                  // Debug logging for payment messages
-                  if (typeId === "paymentRequest" || typeId === "paymentFulfillment") {
-                    console.log('[PYMT-DBG] typeId:', typeId);
-                    console.log('[PYMT-DBG] content:', msg.content);
-                    console.log('[PYMT-DBG] contentType:', msg.contentType);
-                    // Log detailed metadata to see what fields are present
-                    const c = msg.content as Record<string, unknown> | null;
-                    if (c?.metadata) {
-                      console.log('[PYMT-DBG] metadata:', c.metadata);
-                      const m = c.metadata as Record<string, unknown>;
-                      console.log('[PYMT-DBG] metadata fields:', {
-                        tokenSymbol: m?.tokenSymbol,
-                        tokenSymbolType: typeof m?.tokenSymbol,
-                        amount: m?.amount,
-                        amountType: typeof m?.amount,
-                        toAddress: m?.toAddress,
-                        toAddressType: typeof m?.toAddress,
-                      });
-                    }
-                    console.log('[PYMT-DBG] isPaymentRequest:', isPaymentRequest(msg.content));
-                    console.log('[PYMT-DBG] isPaymentFulfillment:', isPaymentFulfillment(msg.content));
-                  }
-
                   if ((typeId === "paymentRequest" || typeId === "paymentFulfillment") && !paymentContent) {
                     const encodedContent = (
                       msg as { encodedContent?: { content?: Uint8Array } }
@@ -2900,8 +2877,12 @@ export function MessagePanel({
                       if (typeof original.content === "string") {
                         quotedContent = original.content;
                       } else if (original.content && typeof original.content === "object") {
-                        const c = original.content as { content?: string; text?: string };
+                        const c = original.content as { content?: string; text?: string; url?: string; urls?: unknown[] };
                         quotedContent = c.content ?? c.text ?? "";
+                        // Check if it's an image attachment (has url or urls property)
+                        if (!quotedContent && (c.url || c.urls)) {
+                          quotedContent = "[Photo]";
+                        }
                       }
                     }
 
@@ -2911,7 +2892,24 @@ export function MessagePanel({
                       if (originalMsg) {
                         quotedContent = getMessageText(originalMsg) ?? "";
                         quotedSenderInboxId = originalMsg.senderInboxId;
+                        // Check if the original message was an image/attachment
+                        const originalTypeId = (originalMsg.contentType as { typeId?: string })?.typeId;
+                        if (!quotedContent && (
+                          originalTypeId === "remoteAttachment" ||
+                          originalTypeId === "remoteStaticAttachment" ||
+                          originalTypeId === "multiRemoteAttachment" ||
+                          originalTypeId === "multiRemoteStaticAttachment" ||
+                          isSingleAttachment(originalMsg.content) ||
+                          isMultiAttachment(originalMsg.content)
+                        )) {
+                          quotedContent = "[Photo]";
+                        }
                       }
+                    }
+
+                    // Final fallback: if we still have no quoted content, show placeholder
+                    if (!quotedContent) {
+                      quotedContent = "[Message]";
                     }
 
                     // Resolve sender address from inboxId

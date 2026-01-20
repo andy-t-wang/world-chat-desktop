@@ -13,7 +13,7 @@ import {
   acquireTabLock,
   releaseTabLock,
 } from "@/lib/tab-lock";
-import { getSessionCache, setSessionCache, isElectron, deleteXmtpDatabase, checkXmtpDatabaseExists, listXmtpDatabases } from "@/lib/storage";
+import { getSessionCache, setSessionCache, isElectron, deleteXmtpDatabase, deleteAllXmtpDatabases, checkXmtpDatabaseExists, listXmtpDatabases } from "@/lib/storage";
 
 // Module cache for faster subsequent loads
 let cachedModules: Awaited<ReturnType<typeof loadAllModules>> | null = null;
@@ -115,6 +115,22 @@ export function useQRXmtpClient(): UseQRXmtpClientResult {
   const restoreSession = useCallback(async (): Promise<boolean> => {
     if (restoringRef.current || initializingRef.current || client) {
       return !!client;
+    }
+
+    // Check if we need to clear the database (set by logout)
+    // This must happen BEFORE any XMTP client operations
+    const pendingClear = localStorage.getItem('xmtp-pending-db-clear');
+    if (pendingClear === 'true') {
+      console.log('[QRXmtpClient] Pending DB clear flag found, deleting all XMTP databases...');
+      try {
+        await deleteAllXmtpDatabases();
+        console.log('[QRXmtpClient] Successfully deleted all XMTP databases');
+      } catch (err) {
+        console.warn('[QRXmtpClient] Failed to delete XMTP databases:', err);
+      }
+      localStorage.removeItem('xmtp-pending-db-clear');
+      // No session to restore - user logged out
+      return false;
     }
 
     const cachedSession = await getSessionCache();

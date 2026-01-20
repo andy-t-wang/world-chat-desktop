@@ -76,7 +76,6 @@
   "dependencies": {
     "@huggingface/transformers": "^3.8.1",
     "electron-updater": "^6.7.3",
-    "onnxruntime-node": "^1.23.2",
     "recharts": "^3.6.0"
   }
 }
