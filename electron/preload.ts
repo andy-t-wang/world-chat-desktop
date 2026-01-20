@@ -99,6 +99,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     };
   },
 
+  /** Acknowledge that shutdown cleanup is complete */
+  acknowledgeShutdown: (): Promise<void> => {
+    return ipcRenderer.invoke('app:acknowledgeShutdown');
+  },
+
   /** Write to persistent debug log (survives app restarts) */
   debugLog: (source: string, message: string, data?: unknown): Promise<void> => {
     return ipcRenderer.invoke('app:debugLog', source, message, data);
@@ -239,6 +244,7 @@ declare global {
       setBadgeCount: (count: number) => Promise<void>;
       focusWindow: () => Promise<void>;
       onPrepareForShutdown: (callback: () => void) => () => void;
+      acknowledgeShutdown: () => Promise<void>;
       debugLog: (source: string, message: string, data?: unknown) => Promise<void>;
       getDebugLog: () => Promise<string>;
       // Auto-updater

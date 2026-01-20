@@ -163,8 +163,8 @@ export function useTranslation() {
           } catch (err) {
             const errMsg = err instanceof Error ? err.message : String(err);
             debugLog('Auto-initialize FAILED', { error: errMsg });
-            // Clear the enabled preference if auto-init fails
-            await window.electronAPI.translation.setEnabled(false);
+            // Don't clear the enabled preference - let user retry on next restart
+            // The preference is only cleared when user explicitly deletes models or disposes
           } finally {
             // Always clear the translation flag
             debugLog('Setting translationInProgress=false (finally block)');

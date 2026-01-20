@@ -225,6 +225,17 @@ function setupIpcHandlers() {
     return autoUpdater.downloadUpdate();
   });
 
+  // Shutdown acknowledgment promise resolver
+  let shutdownAcknowledgeResolve: (() => void) | null = null;
+
+  ipcMain.handle('app:acknowledgeShutdown', () => {
+    debugLog('Update', 'Received shutdown acknowledgment from renderer');
+    if (shutdownAcknowledgeResolve) {
+      shutdownAcknowledgeResolve();
+      shutdownAcknowledgeResolve = null;
+    }
+  });
+
   ipcMain.handle('update:install', async () => {
     // Graceful shutdown before update to prevent database corruption
     isQuitting = true;
@@ -246,16 +257,31 @@ function setupIpcHandlers() {
       }
     }
 
-    // 2. Notify renderer to prepare for shutdown (cleanup streams, pending writes)
+    // 2. Notify renderer to prepare for shutdown and wait for acknowledgment
     if (mainWindow && !mainWindow.isDestroyed()) {
       debugLog('Update', 'Notifying renderer to prepare for shutdown');
       mainWindow.webContents.send('app:prepareForShutdown');
+
+      // Wait for renderer to acknowledge cleanup is complete (with 10s timeout)
+      const SHUTDOWN_TIMEOUT = 10000;
+      const acknowledgmentPromise = new Promise<void>((resolve) => {
+        shutdownAcknowledgeResolve = resolve;
+      });
+      const timeoutPromise = new Promise<void>((resolve) => {
+        setTimeout(() => {
+          debugLog('Update', 'Shutdown acknowledgment timeout - proceeding anyway');
+          resolve();
+        }, SHUTDOWN_TIMEOUT);
+      });
+
+      debugLog('Update', 'Waiting for shutdown acknowledgment (10s timeout)...');
+      await Promise.race([acknowledgmentPromise, timeoutPromise]);
+      shutdownAcknowledgeResolve = null;
     }
 
-    // 3. Wait for pending database operations to complete
-    // This gives XMTP time to commit any pending transactions
-    debugLog('Update', 'Waiting 2s for cleanup...');
-    await new Promise(resolve => setTimeout(resolve, 2000));
+    // 3. Small additional delay to ensure any final writes complete
+    debugLog('Update', 'Final 500ms delay for pending writes...');
+    await new Promise(resolve => setTimeout(resolve, 500));
 
     // 4. Now proceed with forced quit
     debugLog('Update', 'Proceeding with quit and install');
@@ -313,13 +339,13 @@ function setupIpcHandlers() {
       return result;
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
-      debugLog('Translation', 'Initialize FAILED - stopping worker and clearing preference', { error: errorMsg });
+      debugLog('Translation', 'Initialize FAILED - stopping worker', { error: errorMsg });
 
       // Stop the worker process completely on failure
       stopTranslationProcess();
 
-      // Clear the enabled preference so it won't auto-retry on restart
-      setSecureData({ translationEnabled: false });
+      // Don't clear the enabled preference - let it auto-retry on next restart
+      // Preference is only cleared when user explicitly deletes models or disposes
 
       translationInitializing = false;
       translationReady = false;

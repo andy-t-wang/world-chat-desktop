@@ -425,17 +425,48 @@ class XMTPStreamManager {
     if (typeof window !== 'undefined' && window.electronAPI?.onPrepareForShutdown) {
       console.log('[StreamManager] Registering for shutdown notification');
       this.shutdownCleanup = window.electronAPI.onPrepareForShutdown(() => {
-        const state = {
-          translationInProgress: this.translationInProgress,
-          syncing: this.isSyncing(),
-          hasClient: !!this.client,
-          loaded: this.conversationsLoaded,
-        };
-        console.log('[StreamManager] Received shutdown notification, cleaning up...', state);
-        window.electronAPI?.debugLog?.('StreamManager', 'Shutdown notification received', state);
-        this.cleanup();
-        window.electronAPI?.debugLog?.('StreamManager', 'Cleanup completed');
+        // Kick off async shutdown handler - main process will wait for acknowledgment
+        this.handleGracefulShutdown();
       });
+    }
+  }
+
+  /**
+   * Handle graceful shutdown - wait for sync to complete, cleanup, then acknowledge
+   * Called when app is about to quit (e.g., for update install)
+   */
+  private async handleGracefulShutdown(): Promise<void> {
+    const state = {
+      translationInProgress: this.translationInProgress,
+      syncing: this.isSyncing(),
+      hasClient: !!this.client,
+      loaded: this.conversationsLoaded,
+    };
+    console.log('[StreamManager] Received shutdown notification', state);
+    window.electronAPI?.debugLog?.('StreamManager', 'Shutdown notification received', state);
+
+    try {
+      // Wait for any in-progress sync to complete (5 second timeout)
+      if (this.isSyncing()) {
+        console.log('[StreamManager] Waiting for sync to complete before shutdown...');
+        window.electronAPI?.debugLog?.('StreamManager', 'Waiting for sync to complete...');
+        await this.waitForSyncComplete(5000);
+        console.log('[StreamManager] Sync completed or timed out');
+        window.electronAPI?.debugLog?.('StreamManager', 'Sync wait finished');
+      }
+
+      // Cleanup streams and state
+      this.cleanup();
+      console.log('[StreamManager] Cleanup completed');
+      window.electronAPI?.debugLog?.('StreamManager', 'Cleanup completed');
+    } catch (error) {
+      console.error('[StreamManager] Error during graceful shutdown:', error);
+      window.electronAPI?.debugLog?.('StreamManager', 'Shutdown error', { error: String(error) });
+    } finally {
+      // Always acknowledge to main process so it can proceed with quit
+      console.log('[StreamManager] Acknowledging shutdown to main process');
+      window.electronAPI?.debugLog?.('StreamManager', 'Sending shutdown acknowledgment');
+      await window.electronAPI?.acknowledgeShutdown?.();
     }
   }
 

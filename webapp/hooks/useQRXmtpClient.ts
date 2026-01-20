@@ -179,7 +179,7 @@ export function useQRXmtpClient(): UseQRXmtpClientResult {
           appVersion: "WorldChat/1.0.0",
           loggingLevel: LogLevel.Off,
           // Explicitly set history sync URL for cross-device message sync
-          historySyncUrl: "https://message-history.ephemera.network",
+          historySyncUrl: "https://message-history.production.ephemera.network",
           // v6 has built-in send methods - only need codecs for attachments and custom types
           codecs: [
             new AttachmentCodec(),
@@ -354,7 +354,7 @@ export function useQRXmtpClient(): UseQRXmtpClientResult {
           appVersion: "WorldChat/1.0.0",
           loggingLevel: LogLevel.Off,
           // Explicitly set history sync URL for cross-device message sync
-          historySyncUrl: "https://message-history.ephemera.network",
+          historySyncUrl: "https://message-history.production.ephemera.network",
           // v6 has built-in send methods - only need codecs for attachments and custom types
           codecs: [
             new AttachmentCodec(),
