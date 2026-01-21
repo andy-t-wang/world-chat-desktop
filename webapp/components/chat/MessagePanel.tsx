@@ -90,6 +90,10 @@ const TRANSLATE_LANGUAGES = [
   { code: "ja", name: "Japanese", abbr: "JA", flag: "🇯🇵" },
   { code: "ko", name: "Korean", abbr: "KO", flag: "🇰🇷" },
   { code: "ar", name: "Arabic", abbr: "AR", flag: "🇸🇦" },
+  { code: "hi", name: "Hindi", abbr: "HI", flag: "🇮🇳" },
+  { code: "th", name: "Thai", abbr: "TH", flag: "🇹🇭" },
+  { code: "id", name: "Indonesian", abbr: "ID", flag: "🇮🇩" },
+  { code: "ru", name: "Russian", abbr: "RU", flag: "🇷🇺" },
 ];
 
 // Status message patterns - these are system messages shown as centered pills

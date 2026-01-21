@@ -2450,6 +2450,11 @@ class XMTPStreamManager {
                 && (!isConversationMuted || wasMentioned)
                 && (!isMessageRequest || requestNotificationsEnabled);
 
+              // Always update badge when unread count changes (regardless of notification settings)
+              if (!isSelected) {
+                this.updateTabTitle();
+              }
+
               if (shouldNotify) {
                 // Track messages received while tab is hidden
                 this.hiddenTabMessageCount++;
@@ -2505,15 +2510,11 @@ class XMTPStreamManager {
                     messagePreview: notificationBody,
                     avatarUrl,
                   });
-                  this.updateTabTitle();
 
                   // Start flashing the tab title to get user's attention
                   // Pass wasMentioned to bypass mute for @mentions
                   startTitleFlash(notificationTitle, false, wasMentioned);
                 })();
-              } else if (!isSelected) {
-                // Tab visible but different conversation - still update title
-                this.updateTabTitle();
               }
             }
 
@@ -3283,6 +3284,11 @@ class XMTPStreamManager {
           const mutedIds = store.get(mutedConversationIdsAtom);
           const isConversationMuted = mutedIds.includes(conversationId);
 
+          // Always update badge for reactions to own messages (regardless of notification settings)
+          if (!isSelected && isReactionToOwnMessage) {
+            this.updateTabTitle();
+          }
+
           // Show notification only if reaction is to your message, tab not visible, and not muted
           if (!tabVisible && isReactionToOwnMessage && !isConversationMuted) {
             this.hiddenTabMessageCount++;
@@ -3336,11 +3342,8 @@ class XMTPStreamManager {
                 messagePreview: notificationBody,
                 avatarUrl: avatarUrl || metadata.groupImageUrl,
               });
-              this.updateTabTitle();
               startTitleFlash(notificationTitle, false);
             })();
-          } else if (!isSelected && isReactionToOwnMessage) {
-            this.updateTabTitle();
           }
         }
 

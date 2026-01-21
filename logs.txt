@@ -1,0 +1,295 @@
+Here's some logs: 
+
+997.41c7e1fd1533aa67…kEaaDAbV78BmQ8gS7:2 ERROR xmtp_mls::subscriptions::process_message::factory: process stream entry Group(SqlKeyStore(Connection(Database(DatabaseError(Unknown, "database disk image is malformed"))))) group_id="0747e7734e2a8f5babc3c06dd5eb1158" cursor_id=[sid(114134125):oid(  0)] err="sql key store error: connection database disk image is malformed"
+i.wbg.__wbg_error_a7f8fbb0523dae15	@	997.41c7e1fd1533aa67…kEaaDAbV78BmQ8gS7:2
+$func12904	@	bindings_wasm_bg.d4dad245.wasm:0x8acb14
+$func9367	@	bindings_wasm_bg.d4dad245.wasm:0x83ac03
+$func1573	@	bindings_wasm_bg.d4dad245.wasm:0x42c527
+$func9617	@	bindings_wasm_bg.d4dad245.wasm:0x847b34
+$func14035	@	bindings_wasm_bg.d4dad245.wasm:0x8c117d
+$func7128	@	bindings_wasm_bg.d4dad245.wasm:0x782f3c
+$func293	@	bindings_wasm_bg.d4dad245.wasm:0xc8682
+$func468	@	bindings_wasm_bg.d4dad245.wasm:0x1c1dc6
+$func713	@	bindings_wasm_bg.d4dad245.wasm:0x28d556
+$func3046	@	bindings_wasm_bg.d4dad245.wasm:0x5c74f2
+$func15318	@	bindings_wasm_bg.d4dad245.wasm:0x8ec053
+$wasm_bindgen__convert__closures_____invoke__hdff293b41f2cecc6	@	bindings_wasm_bg.d4dad245.wasm:0x8fec65
+I	@	997.41c7e1fd1533aa67…kEaaDAbV78BmQ8gS7:1
+s	@	997.41c7e1fd1533aa67…kEaaDAbV78BmQ8gS7:1
+setTimeout		
+(anonymous)	@	997.41c7e1fd1533aa67…kEaaDAbV78BmQ8gS7:2
+l	@	997.41c7e1fd1533aa67…kEaaDAbV78BmQ8gS7:1
+i.wbg.__wbg_setTimeout_db2dbaeefb6f39c7	@	997.41c7e1fd1533aa67…kEaaDAbV78BmQ8gS7:2
+$func9829	@	bindings_wasm_bg.d4dad245.wasm:0x85228e
+$func8699	@	bindings_wasm_bg.d4dad245.wasm:0x8177f0
+$func293	@	bindings_wasm_bg.d4dad245.wasm:0xc7a8f
+$func468	@	bindings_wasm_bg.d4dad245.wasm:0x1c1dc6
+$func713	@	bindings_wasm_bg.d4dad245.wasm:0x28d556
+$func3046	@	bindings_wasm_bg.d4dad245.wasm:0x5c74f2
+$func15318	@	bindings_wasm_bg.d4dad245.wasm:0x8ec053
+$wasm_bindgen__convert__closures_____invoke__hdff293b41f2cecc6	@	bindings_wasm_bg.d4dad245.wasm:0x8fec65
+I	@	997.41c7e1fd1533aa67…kEaaDAbV78BmQ8gS7:1
+s	@	997.41c7e1fd1533aa67…kEaaDAbV78BmQ8gS7:1
+setTimeout		
+(anonymous)	@	997.41c7e1fd1533aa67…kEaaDAbV78BmQ8gS7:2
+l	@	997.41c7e1fd1533aa67…kEaaDAbV78BmQ8gS7:1
+i.wbg.__wbg_setTimeout_db2dbaeefb6f39c7	@	997.41c7e1fd1533aa67…kEaaDAbV78BmQ8gS7:2
+$func9829	@	bindings_wasm_bg.d4dad245.wasm:0x85228e
+$func8699	@	bindings_wasm_bg.d4dad245.wasm:0x8177f0
+$func293	@	bindings_wasm_bg.d4dad245.wasm:0xc7a8f
+$func468	@	bindings_wasm_bg.d4dad245.wasm:0x1c1dc6
+$func713	@	bindings_wasm_bg.d4dad245.wasm:0x28d556
+$func3046	@	bindings_wasm_bg.d4dad245.wasm:0x5c74f2
+$func15318	@	bindings_wasm_bg.d4dad245.wasm:0x8ec053
+$wasm_bindgen__convert__closures_____invoke__hdff293b41f2cecc6	@	bindings_wasm_bg.d4dad245.wasm:0x8fec65
+I	@	997.41c7e1fd1533aa67…kEaaDAbV78BmQ8gS7:1
+s	@	997.41c7e1fd1533aa67…kEaaDAbV78BmQ8gS7:1
+setTimeout		
+(anonymous)	@	997.41c7e1fd1533aa67…kEaaDAbV78BmQ8gS7:2
+l	@	997.41c7e1fd1533aa67…kEaaDAbV78BmQ8gS7:1
+i.wbg.__wbg_setTimeout_db2dbaeefb6f39c7	@	997.41c7e1fd1533aa67…kEaaDAbV78BmQ8gS7:2
+$func9829	@	bindings_wasm_bg.d4dad245.wasm:0x85228e
+$func8699	@	bindings_wasm_bg.d4dad245.wasm:0x8177f0
+$func293	@	bindings_wasm_bg.d4dad245.wasm:0xc7a8f
+$func468	@	bindings_wasm_bg.d4dad245.wasm:0x1c1dc6
+$func713	@	bindings_wasm_bg.d4dad245.wasm:0x28d556
+$func3046	@	bindings_wasm_bg.d4dad245.wasm:0x5c74f2
+$func15318	@	bindings_wasm_bg.d4dad245.wasm:0x8ec053
+$wasm_bindgen__convert__closures_____invoke__hdff293b41f2cecc6	@	bindings_wasm_bg.d4dad245.wasm:0x8fec65
+I	@	997.41c7e1fd1533aa67…kEaaDAbV78BmQ8gS7:1
+s	@	997.41c7e1fd1533aa67…kEaaDAbV78BmQ8gS7:1
+setTimeout		
+(anonymous)	@	997.41c7e1fd1533aa67…kEaaDAbV78BmQ8gS7:2
+l	@	997.41c7e1fd1533aa67…kEaaDAbV78BmQ8gS7:1
+i.wbg.__wbg_setTimeout_db2dbaeefb6f39c7	@	997.41c7e1fd1533aa67…kEaaDAbV78BmQ8gS7:2
+$func9829	@	bindings_wasm_bg.d4dad245.wasm:0x85228e
+$func8699	@	bindings_wasm_bg.d4dad245.wasm:0x8177f0
+$func293	@	bindings_wasm_bg.d4dad245.wasm:0xc7a8f
+$func468	@	bindings_wasm_bg.d4dad245.wasm:0x1c1dc6
+$func713	@	bindings_wasm_bg.d4dad245.wasm:0x28d556
+$func3046	@	bindings_wasm_bg.d4dad245.wasm:0x5c74f2
+$func15318	@	bindings_wasm_bg.d4dad245.wasm:0x8ec053
+$wasm_bindgen__convert__closures_____invoke__hdff293b41f2cecc6	@	bindings_wasm_bg.d4dad245.wasm:0x8fec65
+I	@	997.41c7e1fd1533aa67…kEaaDAbV78BmQ8gS7:1
+s	@	997.41c7e1fd1533aa67…kEaaDAbV78BmQ8gS7:1
+setTimeout		
+(anonymous)	@	997.41c7e1fd1533aa67…kEaaDAbV78BmQ8gS7:2
+l	@	997.41c7e1fd1533aa67…kEaaDAbV78BmQ8gS7:1
+i.wbg.__wbg_setTimeout_db2dbaeefb6f39c7	@	997.41c7e1fd1533aa67…kEaaDAbV78BmQ8gS7:2
+$func9829	@	bindings_wasm_bg.d4dad245.wasm:0x85228e
+$func8699	@	bindings_wasm_bg.d4dad245.wasm:0x8177f0
+$func293	@	bindings_wasm_bg.d4dad245.wasm:0xc7a8f
+$func468	@	bindings_wasm_bg.d4dad245.wasm:0x1c1dc6
+$func713	@	bindings_wasm_bg.d4dad245.wasm:0x28d556
+$func3046	@	bindings_wasm_bg.d4dad245.wasm:0x5c74f2
+$func15318	@	bindings_wasm_bg.d4dad245.wasm:0x8ec053
+$wasm_bindgen__convert__closures_____invoke__hdff293b41f2cecc6	@	bindings_wasm_bg.d4dad245.wasm:0x8fec65
+I	@	997.41c7e1fd1533aa67…kEaaDAbV78BmQ8gS7:1
+s	@	997.41c7e1fd1533aa67…kEaaDAbV78BmQ8gS7:1
+setTimeout		
+(anonymous)	@	997.41c7e1fd1533aa67…kEaaDAbV78BmQ8gS7:2
+l	@	997.41c7e1fd1533aa67…kEaaDAbV78BmQ8gS7:1
+i.wbg.__wbg_setTimeout_db2dbaeefb6f39c7	@	997.41c7e1fd1533aa67…kEaaDAbV78BmQ8gS7:2
+$func9829	@	bindings_wasm_bg.d4dad245.wasm:0x85228e
+$func8699	@	bindings_wasm_bg.d4dad245.wasm:0x8177f0
+$func293	@	bindings_wasm_bg.d4dad245.wasm:0xc7a8f
+$func468	@	bindings_wasm_bg.d4dad245.wasm:0x1c1dc6
+$func713	@	bindings_wasm_bg.d4dad245.wasm:0x28d556
+$func3046	@	bindings_wasm_bg.d4dad245.wasm:0x5c74f2
+$func15318	@	bindings_wasm_bg.d4dad245.wasm:0x8ec053
+$wasm_bindgen__convert__closures_____invoke__hdff293b41f2cecc6	@	bindings_wasm_bg.d4dad245.wasm:0x8fec65
+I	@	997.41c7e1fd1533aa67…kEaaDAbV78BmQ8gS7:1
+s	@	997.41c7e1fd1533aa67…kEaaDAbV78BmQ8gS7:1
+setTimeout		
+(anonymous)	@	997.41c7e1fd1533aa67…kEaaDAbV78BmQ8gS7:2
+l	@	997.41c7e1fd1533aa67…kEaaDAbV78BmQ8gS7:1
+i.wbg.__wbg_setTimeout_db2dbaeefb6f39c7	@	997.41c7e1fd1533aa67…kEaaDAbV78BmQ8gS7:2
+$func9829	@	bindings_wasm_bg.d4dad245.wasm:0x85228e
+$func8699	@	bindings_wasm_bg.d4dad245.wasm:0x8177f0
+$func293	@	bindings_wasm_bg.d4dad245.wasm:0xc7a8f
+$func468	@	bindings_wasm_bg.d4dad245.wasm:0x1c1dc6
+$func713	@	bindings_wasm_bg.d4dad245.wasm:0x28d556
+$func3046	@	bindings_wasm_bg.d4dad245.wasm:0x5c74f2
+$func15318	@	bindings_wasm_bg.d4dad245.wasm:0x8ec053
+$wasm_bindgen__convert__closures_____invoke__hdff293b41f2cecc6	@	bindings_wasm_bg.d4dad245.wasm:0x8fec65
+I	@	997.41c7e1fd1533aa67…kEaaDAbV78BmQ8gS7:1
+s	@	997.41c7e1fd1533aa67…kEaaDAbV78BmQ8gS7:1
+setTimeout		
+(anonymous)	@	997.41c7e1fd1533aa67…kEaaDAbV78BmQ8gS7:2
+l	@	997.41c7e1fd1533aa67…kEaaDAbV78BmQ8gS7:1
+i.wbg.__wbg_setTimeout_db2dbaeefb6f39c7	@	997.41c7e1fd1533aa67…kEaaDAbV78BmQ8gS7:2
+$func9829	@	bindings_wasm_bg.d4dad245.wasm:0x85228e
+$func8699	@	bindings_wasm_bg.d4dad245.wasm:0x8177f0
+$func293	@	bindings_wasm_bg.d4dad245.wasm:0xc7a8f
+$func468	@	bindings_wasm_bg.d4dad245.wasm:0x1c1dc6
+$func713	@	bindings_wasm_bg.d4dad245.wasm:0x28d556
+$func3046	@	bindings_wasm_bg.d4dad245.wasm:0x5c74f2
+$func15318	@	bindings_wasm_bg.d4dad245.wasm:0x8ec053
+$wasm_bindgen__convert__closures_____invoke__hdff293b41f2cecc6	@	bindings_wasm_bg.d4dad245.wasm:0x8fec65
+I	@	997.41c7e1fd1533aa67…kEaaDAbV78BmQ8gS7:1
+s	@	997.41c7e1fd1533aa67…kEaaDAbV78BmQ8gS7:1
+setTimeout		
+(anonymous)	@	997.41c7e1fd1533aa67…kEaaDAbV78BmQ8gS7:2
+l	@	997.41c7e1fd1533aa67…kEaaDAbV78BmQ8gS7:1
+i.wbg.__wbg_setTimeout_db2dbaeefb6f39c7	@	997.41c7e1fd1533aa67…kEaaDAbV78BmQ8gS7:2
+$func9829	@	bindings_wasm_bg.d4dad245.wasm:0x85228e
+$func8699	@	bindings_wasm_bg.d4dad245.wasm:0x8177f0
+$func293	@	bindings_wasm_bg.d4dad245.wasm:0xc7a8f
+$func468	@	bindings_wasm_bg.d4dad245.wasm:0x1c1dc6
+$func713	@	bindings_wasm_bg.d4dad245.wasm:0x28d556
+$func3046	@	bindings_wasm_bg.d4dad245.wasm:0x5c74f2
+$func15318	@	bindings_wasm_bg.d4dad245.wasm:0x8ec053
+$wasm_bindgen__convert__closures_____invoke__hdff293b41f2cecc6	@	bindings_wasm_bg.d4dad245.wasm:0x8fec65
+I	@	997.41c7e1fd1533aa67…kEaaDAbV78BmQ8gS7:1
+s	@	997.41c7e1fd1533aa67…kEaaDAbV78BmQ8gS7:1
+setTimeout		
+(anonymous)	@	997.41c7e1fd1533aa67…kEaaDAbV78BmQ8gS7:2
+l	@	997.41c7e1fd1533aa67…kEaaDAbV78BmQ8gS7:1
+i.wbg.__wbg_setTimeout_db2dbaeefb6f39c7	@	997.41c7e1fd1533aa67…kEaaDAbV78BmQ8gS7:2
+$func9829	@	bindings_wasm_bg.d4dad245.wasm:0x85228e
+$func8699	@	bindings_wasm_bg.d4dad245.wasm:0x8177f0
+$func293	@	bindings_wasm_bg.d4dad245.wasm:0xc7a8f
+$func468	@	bindings_wasm_bg.d4dad245.wasm:0x1c1dc6
+$func713	@	bindings_wasm_bg.d4dad245.wasm:0x28d556
+$func3046	@	bindings_wasm_bg.d4dad245.wasm:0x5c74f2
+$func15318	@	bindings_wasm_bg.d4dad245.wasm:0x8ec053
+$wasm_bindgen__convert__closures_____invoke__hdff293b41f2cecc6	@	bindings_wasm_bg.d4dad245.wasm:0x8fec65
+I	@	997.41c7e1fd1533aa67…kEaaDAbV78BmQ8gS7:1
+s	@	997.41c7e1fd1533aa67…kEaaDAbV78BmQ8gS7:1
+setTimeout		
+(anonymous)	@	997.41c7e1fd1533aa67…kEaaDAbV78BmQ8gS7:2
+l	@	997.41c7e1fd1533aa67…kEaaDAbV78BmQ8gS7:1
+i.wbg.__wbg_setTimeout_db2dbaeefb6f39c7	@	997.41c7e1fd1533aa67…kEaaDAbV78BmQ8gS7:2
+$func9829	@	bindings_wasm_bg.d4dad245.wasm:0x85228e
+$func8699	@	bindings_wasm_bg.d4dad245.wasm:0x8177f0
+$func293	@	bindings_wasm_bg.d4dad245.wasm:0xc7a8f
+$func468	@	bindings_wasm_bg.d4dad245.wasm:0x1c1dc6
+$func713	@	bindings_wasm_bg.d4dad245.wasm:0x28d556
+$func3046	@	bindings_wasm_bg.d4dad245.wasm:0x5c74f2
+$func15318	@	bindings_wasm_bg.d4dad245.wasm:0x8ec053
+$wasm_bindgen__convert__closures_____invoke__hdff293b41f2cecc6	@	bindings_wasm_bg.d4dad245.wasm:0x8fec65
+I	@	997.41c7e1fd1533aa67…kEaaDAbV78BmQ8gS7:1
+s	@	997.41c7e1fd1533aa67…kEaaDAbV78BmQ8gS7:1
+setTimeout		
+(anonymous)	@	997.41c7e1fd1533aa67…kEaaDAbV78BmQ8gS7:2
+l	@	997.41c7e1fd1533aa67…kEaaDAbV78BmQ8gS7:1
+i.wbg.__wbg_setTimeout_db2dbaeefb6f39c7	@	997.41c7e1fd1533aa67…kEaaDAbV78BmQ8gS7:2
+$func9829	@	bindings_wasm_bg.d4dad245.wasm:0x85228e
+$func8699	@	bindings_wasm_bg.d4dad245.wasm:0x8177f0
+$func293	@	bindings_wasm_bg.d4dad245.wasm:0xc7a8f
+$func468	@	bindings_wasm_bg.d4dad245.wasm:0x1c1dc6
+$func713	@	bindings_wasm_bg.d4dad245.wasm:0x28d556
+$func3046	@	bindings_wasm_bg.d4dad245.wasm:0x5c74f2
+$func15318	@	bindings_wasm_bg.d4dad245.wasm:0x8ec053
+$wasm_bindgen__convert__closures_____invoke__hdff293b41f2cecc6	@	bindings_wasm_bg.d4dad245.wasm:0x8fec65
+I	@	997.41c7e1fd1533aa67…kEaaDAbV78BmQ8gS7:1
+s	@	997.41c7e1fd1533aa67…kEaaDAbV78BmQ8gS7:1
+setTimeout		
+(anonymous)	@	997.41c7e1fd1533aa67…kEaaDAbV78BmQ8gS7:2
+l	@	997.41c7e1fd1533aa67…kEaaDAbV78BmQ8gS7:1
+i.wbg.__wbg_setTimeout_db2dbaeefb6f39c7	@	997.41c7e1fd1533aa67…kEaaDAbV78BmQ8gS7:2
+$func9829	@	bindings_wasm_bg.d4dad245.wasm:0x85228e
+$func8699	@	bindings_wasm_bg.d4dad245.wasm:0x8177f0
+$func293	@	bindings_wasm_bg.d4dad245.wasm:0xc7a8f
+$func468	@	bindings_wasm_bg.d4dad245.wasm:0x1c1dc6
+$func713	@	bindings_wasm_bg.d4dad245.wasm:0x28d556
+$func3046	@	bindings_wasm_bg.d4dad245.wasm:0x5c74f2
+$func15318	@	bindings_wasm_bg.d4dad245.wasm:0x8ec053
+$wasm_bindgen__convert__closures_____invoke__hdff293b41f2cecc6	@	bindings_wasm_bg.d4dad245.wasm:0x8fec65
+I	@	997.41c7e1fd1533aa67…kEaaDAbV78BmQ8gS7:1
+s	@	997.41c7e1fd1533aa67…kEaaDAbV78BmQ8gS7:1
+setTimeout		
+(anonymous)	@	997.41c7e1fd1533aa67…kEaaDAbV78BmQ8gS7:2
+l	@	997.41c7e1fd1533aa67…kEaaDAbV78BmQ8gS7:1
+i.wbg.__wbg_setTimeout_db2dbaeefb6f39c7	@	997.41c7e1fd1533aa67…kEaaDAbV78BmQ8gS7:2
+$func9829	@	bindings_wasm_bg.d4dad245.wasm:0x85228e
+$func8699	@	bindings_wasm_bg.d4dad245.wasm:0x8177f0
+$func293	@	bindings_wasm_bg.d4dad245.wasm:0xc7a8f
+$func468	@	bindings_wasm_bg.d4dad245.wasm:0x1c1dc6
+$func713	@	bindings_wasm_bg.d4dad245.wasm:0x28d556
+$func3046	@	bindings_wasm_bg.d4dad245.wasm:0x5c74f2
+$func15318	@	bindings_wasm_bg.d4dad245.wasm:0x8ec053
+$wasm_bindgen__convert__closures_____invoke__hdff293b41f2cecc6	@	bindings_wasm_bg.d4dad245.wasm:0x8fec65
+I	@	997.41c7e1fd1533aa67…kEaaDAbV78BmQ8gS7:1
+s	@	997.41c7e1fd1533aa67…kEaaDAbV78BmQ8gS7:1
+setTimeout		
+(anonymous)	@	997.41c7e1fd1533aa67…kEaaDAbV78BmQ8gS7:2
+l	@	997.41c7e1fd1533aa67…kEaaDAbV78BmQ8gS7:1
+i.wbg.__wbg_setTimeout_db2dbaeefb6f39c7	@	997.41c7e1fd1533aa67…kEaaDAbV78BmQ8gS7:2
+$func9829	@	bindings_wasm_bg.d4dad245.wasm:0x85228e
+$func8699	@	bindings_wasm_bg.d4dad245.wasm:0x8177f0
+$func293	@	bindings_wasm_bg.d4dad245.wasm:0xc7a8f
+$func468	@	bindings_wasm_bg.d4dad245.wasm:0x1c1dc6
+$func713	@	bindings_wasm_bg.d4dad245.wasm:0x28d556
+$func3046	@	bindings_wasm_bg.d4dad245.wasm:0x5c74f2
+$func15318	@	bindings_wasm_bg.d4dad245.wasm:0x8ec053
+$wasm_bindgen__convert__closures_____invoke__hdff293b41f2cecc6	@	bindings_wasm_bg.d4dad245.wasm:0x8fec65
+I	@	997.41c7e1fd1533aa67…kEaaDAbV78BmQ8gS7:1
+s	@	997.41c7e1fd1533aa67…kEaaDAbV78BmQ8gS7:1
+setTimeout		
+(anonymous)	@	997.41c7e1fd1533aa67…kEaaDAbV78BmQ8gS7:2
+l	@	997.41c7e1fd1533aa67…kEaaDAbV78BmQ8gS7:1
+i.wbg.__wbg_setTimeout_db2dbaeefb6f39c7	@	997.41c7e1fd1533aa67…kEaaDAbV78BmQ8gS7:2
+$func9829	@	bindings_wasm_bg.d4dad245.wasm:0x85228e
+$func8699	@	bindings_wasm_bg.d4dad245.wasm:0x8177f0
+$func293	@	bindings_wasm_bg.d4dad245.wasm:0xc7a8f
+$func468	@	bindings_wasm_bg.d4dad245.wasm:0x1c1dc6
+$func713	@	bindings_wasm_bg.d4dad245.wasm:0x28d556
+$func3046	@	bindings_wasm_bg.d4dad245.wasm:0x5c74f2
+$func15318	@	bindings_wasm_bg.d4dad245.wasm:0x8ec053
+$wasm_bindgen__convert__closures_____invoke__hdff293b41f2cecc6	@	bindings_wasm_bg.d4dad245.wasm:0x8fec65
+I	@	997.41c7e1fd1533aa67…kEaaDAbV78BmQ8gS7:1
+s	@	997.41c7e1fd1533aa67…kEaaDAbV78BmQ8gS7:1
+setTimeout		
+(anonymous)	@	997.41c7e1fd1533aa67…kEaaDAbV78BmQ8gS7:2
+l	@	997.41c7e1fd1533aa67…kEaaDAbV78BmQ8gS7:1
+i.wbg.__wbg_setTimeout_db2dbaeefb6f39c7	@	997.41c7e1fd1533aa67…kEaaDAbV78BmQ8gS7:2
+$func9829	@	bindings_wasm_bg.d4dad245.wasm:0x85228e
+$func8699	@	bindings_wasm_bg.d4dad245.wasm:0x8177f0
+$func293	@	bindings_wasm_bg.d4dad245.wasm:0xc7a8f
+$func468	@	bindings_wasm_bg.d4dad245.wasm:0x1c1dc6
+$func713	@	bindings_wasm_bg.d4dad245.wasm:0x28d556
+$func3046	@	bindings_wasm_bg.d4dad245.wasm:0x5c74f2
+$func15318	@	bindings_wasm_bg.d4dad245.wasm:0x8ec053
+$wasm_bindgen__convert__closures_____invoke__hdff293b41f2cecc6	@	bindings_wasm_bg.d4dad245.wasm:0x8fec65
+I	@	997.41c7e1fd1533aa67…kEaaDAbV78BmQ8gS7:1
+s	@	997.41c7e1fd1533aa67…kEaaDAbV78BmQ8gS7:1
+setTimeout		
+(anonymous)	@	997.41c7e1fd1533aa67…kEaaDAbV78BmQ8gS7:2
+l	@	997.41c7e1fd1533aa67…kEaaDAbV78BmQ8gS7:1
+i.wbg.__wbg_setTimeout_db2dbaeefb6f39c7	@	997.41c7e1fd1533aa67…kEaaDAbV78BmQ8gS7:2
+$func9829	@	bindings_wasm_bg.d4dad245.wasm:0x85228e
+$func8699	@	bindings_wasm_bg.d4dad245.wasm:0x8177f0
+$func293	@	bindings_wasm_bg.d4dad245.wasm:0xc7a8f
+$func468	@	bindings_wasm_bg.d4dad245.wasm:0x1c1dc6
+$func713	@	bindings_wasm_bg.d4dad245.wasm:0x28d556
+$func3046	@	bindings_wasm_bg.d4dad245.wasm:0x5c74f2
+$func15318	@	bindings_wasm_bg.d4dad245.wasm:0x8ec053
+$wasm_bindgen__convert__closures_____invoke__hdff293b41f2cecc6	@	bindings_wasm_bg.d4dad245.wasm:0x8fec65
+I	@	997.41c7e1fd1533aa67…kEaaDAbV78BmQ8gS7:1
+s	@	997.41c7e1fd1533aa67…kEaaDAbV78BmQ8gS7:1
+setTimeout		
+(anonymous)	@	997.41c7e1fd1533aa67…kEaaDAbV78BmQ8gS7:2
+l	@	997.41c7e1fd1533aa67…kEaaDAbV78BmQ8gS7:1
+i.wbg.__wbg_setTimeout_db2dbaeefb6f39c7	@	997.41c7e1fd1533aa67…kEaaDAbV78BmQ8gS7:2
+$func9829	@	bindings_wasm_bg.d4dad245.wasm:0x85228e
+$func8699	@	bindings_wasm_bg.d4dad245.wasm:0x8177f0
+$func293	@	bindings_wasm_bg.d4dad245.wasm:0xc7a8f
+$func468	@	bindings_wasm_bg.d4dad245.wasm:0x1c1dc6
+$func713	@	bindings_wasm_bg.d4dad245.wasm:0x28d556
+$func3046	@	bindings_wasm_bg.d4dad245.wasm:0x5c74f2
+$func15318	@	bindings_wasm_bg.d4dad245.wasm:0x8ec053
+$wasm_bindgen__convert__closures_____invoke__hdff293b41f2cecc6	@	bindings_wasm_bg.d4dad245.wasm:0x8fec65
+I	@	997.41c7e1fd1533aa67…kEaaDAbV78BmQ8gS7:1
+s	@	997.41c7e1fd1533aa67…kEaaDAbV78BmQ8gS7:1
+setTimeout		
+(anonymous)	@	997.41c7e1fd1533aa67…kEaaDAbV78BmQ8gS7:2
+l	@	997.41c7e1fd1533aa67…kEaaDAbV78BmQ8gS7:1
+i.wbg.__wbg_setTimeout_db2dbaeefb6f39c7	@	997.41c7e1fd1533aa67…kEaaDAbV78BmQ8gS7:2
+$func9829	@	bindings_wasm_bg.d4dad245.wasm:0x85228e
+$func8699
+
+
+
+
+sql key store error: connection database disk image is malformed"
