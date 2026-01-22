@@ -176,31 +176,48 @@ export async function deleteXmtpDatabase(inboxId: string): Promise<boolean> {
 export async function deleteAllXmtpDatabases(): Promise<void> {
   if (typeof window === 'undefined') return;
 
+  const debugLog = window.electronAPI?.debugLog;
+
   try {
     const root = await navigator.storage.getDirectory();
     const toDelete: string[] = [];
+    const allFiles: string[] = [];
 
     // @ts-ignore - entries() exists on FileSystemDirectoryHandle
     for await (const [name] of root.entries()) {
-      if (name.startsWith('xmtp-') && name.endsWith('.db3')) {
+      allFiles.push(name);
+      // Delete ALL xmtp-related files (db3, wal, shm, and any other associated files)
+      if (name.startsWith('xmtp-') || name.includes('xmtp')) {
         toDelete.push(name);
       }
     }
 
+    console.log('[Storage] OPFS files found:', allFiles);
+    debugLog?.('Storage', 'OPFS files found', { allFiles, toDelete });
+
     for (const name of toDelete) {
       try {
-        await root.removeEntry(name);
-        console.log('[Storage] Deleted XMTP database:', name);
+        await root.removeEntry(name, { recursive: true });
+        console.log('[Storage] Deleted:', name);
+        debugLog?.('Storage', 'Deleted file', { name });
       } catch (err) {
+        const errMsg = err instanceof Error ? err.message : String(err);
         console.warn('[Storage] Failed to delete:', name, err);
+        debugLog?.('Storage', 'Failed to delete file', { name, error: errMsg });
       }
     }
 
     if (toDelete.length > 0) {
-      console.log('[Storage] Deleted', toDelete.length, 'XMTP database(s)');
+      console.log('[Storage] Deleted', toDelete.length, 'XMTP file(s)');
+      debugLog?.('Storage', 'Deletion complete', { count: toDelete.length });
+    } else {
+      console.log('[Storage] No XMTP files found to delete');
+      debugLog?.('Storage', 'No XMTP files found to delete', { allFiles });
     }
   } catch (error) {
+    const errMsg = error instanceof Error ? error.message : String(error);
     console.warn('[Storage] Failed to list/delete OPFS files:', error);
+    debugLog?.('Storage', 'Failed to list/delete OPFS files', { error: errMsg });
   }
 }
 

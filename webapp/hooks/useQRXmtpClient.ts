@@ -120,13 +120,21 @@ export function useQRXmtpClient(): UseQRXmtpClientResult {
     // Check if we need to clear the database (set by logout)
     // This must happen BEFORE any XMTP client operations
     const pendingClear = localStorage.getItem('xmtp-pending-db-clear');
+    const debugLog = window.electronAPI?.debugLog;
+
+    debugLog?.('QRXmtpClient', 'restoreSession called', { pendingClear, hasClient: !!client });
+
     if (pendingClear === 'true') {
       console.log('[QRXmtpClient] Pending DB clear flag found, deleting all XMTP databases...');
+      debugLog?.('QRXmtpClient', 'Pending DB clear flag found, deleting databases...');
       try {
         await deleteAllXmtpDatabases();
         console.log('[QRXmtpClient] Successfully deleted all XMTP databases');
+        debugLog?.('QRXmtpClient', 'Successfully deleted all XMTP databases');
       } catch (err) {
+        const errMsg = err instanceof Error ? err.message : String(err);
         console.warn('[QRXmtpClient] Failed to delete XMTP databases:', err);
+        debugLog?.('QRXmtpClient', 'Failed to delete XMTP databases', { error: errMsg });
       }
       localStorage.removeItem('xmtp-pending-db-clear');
       // No session to restore - user logged out

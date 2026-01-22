@@ -162,23 +162,32 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
   const handleLogout = async () => {
     if (isLoggingOut) return;
     setIsLoggingOut(true);
+
+    const debugLog = window.electronAPI?.debugLog;
+    debugLog?.('Logout', 'Starting logout process');
+
     try {
       // Cleanup streams first
       streamManager.cleanup();
+      debugLog?.('Logout', 'Streams cleaned up');
 
       // Clear session data
       clearSession();
       await clearSessionCache();
+      debugLog?.('Logout', 'Session cleared');
 
       // Set flag to delete database on next startup (before XMTP client is created)
       // This is necessary because WASM holds a file lock on the database
       localStorage.setItem('xmtp-pending-db-clear', 'true');
       console.log('[Logout] Set pending DB clear flag');
+      debugLog?.('Logout', 'Set pending DB clear flag', { flag: localStorage.getItem('xmtp-pending-db-clear') });
 
       // Redirect to login - database will be deleted on next startup
       window.location.href = "/";
     } catch (error) {
+      const errMsg = error instanceof Error ? error.message : String(error);
       console.error("Logout failed:", error);
+      debugLog?.('Logout', 'Logout failed', { error: errMsg });
       setIsLoggingOut(false);
     }
   };
