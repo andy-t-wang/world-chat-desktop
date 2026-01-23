@@ -1709,10 +1709,13 @@ class XMTPStreamManager {
         this.conversationStreamRestarts = 0;
         this.lastStableTime = Date.now();
 
-        // Check if we can reset to healthy
-        const status = store.get(streamStatusAtom);
-        if (status.consecutiveFailures < 3 && store.get(streamHealthAtom) === 'reconnecting') {
+        // Stream connected successfully - reset to healthy
+        const health = store.get(streamHealthAtom);
+        if (health !== 'healthy') {
+          console.log('[StreamManager] Conversation stream connected, resetting to healthy');
           this.updateStreamHealth('healthy');
+          this.updateStreamStatus({ consecutiveFailures: 0 });
+          this.stopFallbackSync();
         }
 
         for await (const conv of streamProxy as AsyncIterable<Conversation>) {
@@ -2220,10 +2223,13 @@ class XMTPStreamManager {
         this.allMessagesStreamRestarts = 0;
         this.lastStableTime = Date.now();
 
-        // Check if we can reset to healthy
-        const status = store.get(streamStatusAtom);
-        if (status.consecutiveFailures < 3 && store.get(streamHealthAtom) === 'reconnecting') {
+        // Stream connected successfully - reset to healthy
+        const health = store.get(streamHealthAtom);
+        if (health !== 'healthy') {
+          console.log('[StreamManager] Messages stream connected, resetting to healthy');
           this.updateStreamHealth('healthy');
+          this.updateStreamStatus({ consecutiveFailures: 0 });
+          this.stopFallbackSync();
         }
 
         for await (const msg of streamProxy as AsyncIterable<{ id: string; conversationId: string; content: unknown; sentAtNs: bigint; senderInboxId: string; contentType?: { typeId?: string; authorityId?: string }; kind?: string }>) {
@@ -3549,7 +3555,7 @@ class XMTPStreamManager {
 
     this.visibilityHandler = () => {
       if (document.visibilityState === 'visible' && this.client) {
-        console.log('[StreamManager] App returned to foreground, checking streams');
+        console.log('[StreamManager] App returned to foreground');
 
         // Reset failure counter - background suspension is not a real failure
         const status = store.get(streamStatusAtom);
@@ -3560,14 +3566,8 @@ class XMTPStreamManager {
           this.stopFallbackSync();
         }
 
-        // Proactively restart streams if they may have been suspended
-        // The streams will no-op if already running properly
-        this.conversationStreamController?.abort();
-        this.allMessagesStreamController?.abort();
-        this.startConversationStream();
-        this.startAllMessagesStream();
-
-        // Do a quick sync to catch up on any missed messages
+        // Don't restart streams - they should self-heal if needed
+        // Just do a quick sync to catch up on any missed messages
         this.performQuickSync();
       }
     };
@@ -3770,37 +3770,47 @@ class XMTPStreamManager {
 
   /**
    * Mark activity for health tracking - conversation received
+   * Receiving data means the stream is working - reset to healthy
    */
   private markConversationActivity(): void {
     this.lastConversationReceivedAt = Date.now();
-    this.updateStreamStatus({ lastConversationReceivedAt: this.lastConversationReceivedAt });
+    this.lastStableTime = Date.now();
 
-    // Reset to healthy if we were reconnecting
+    // Receiving data = stream is working, reset everything
     const health = store.get(streamHealthAtom);
-    if (health === 'reconnecting') {
-      this.lastStableTime = Date.now();
-      const status = store.get(streamStatusAtom);
-      if (status.consecutiveFailures < 3) {
-        this.updateStreamHealth('healthy');
-      }
+    if (health !== 'healthy') {
+      console.log('[StreamManager] Conversation received, resetting to healthy');
+      this.updateStreamHealth('healthy');
+      this.updateStreamStatus({
+        lastConversationReceivedAt: this.lastConversationReceivedAt,
+        consecutiveFailures: 0,
+      });
+      this.stopFallbackSync();
+    } else {
+      this.updateStreamStatus({ lastConversationReceivedAt: this.lastConversationReceivedAt });
     }
   }
 
   /**
    * Mark activity for health tracking - message received
+   * Receiving data means the stream is working - reset to healthy
    */
   private markMessageActivity(): void {
     this.lastMessageReceivedAt = Date.now();
-    this.updateStreamStatus({ lastMessageReceivedAt: this.lastMessageReceivedAt });
+    this.lastStableTime = Date.now();
 
-    // Reset to healthy if we were reconnecting
+    // Receiving data = stream is working, reset everything
     const health = store.get(streamHealthAtom);
-    if (health === 'reconnecting') {
-      this.lastStableTime = Date.now();
-      const status = store.get(streamStatusAtom);
-      if (status.consecutiveFailures < 3) {
-        this.updateStreamHealth('healthy');
-      }
+    if (health !== 'healthy') {
+      console.log('[StreamManager] Message received, resetting to healthy');
+      this.updateStreamHealth('healthy');
+      this.updateStreamStatus({
+        lastMessageReceivedAt: this.lastMessageReceivedAt,
+        consecutiveFailures: 0,
+      });
+      this.stopFallbackSync();
+    } else {
+      this.updateStreamStatus({ lastMessageReceivedAt: this.lastMessageReceivedAt });
     }
   }
 
