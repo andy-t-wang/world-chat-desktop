@@ -1,9 +1,12 @@
 {
   "name": "world-chat-desktop",
-  "version": "1.6.0",
+  "version": "1.6.1",
   "description": "World Chat Desktop - Secure encrypted messaging",
   "main": "dist/main.js",
-  "author": "World",
+  "author": {
+    "name": "World",
+    "email": "support@world.org"
+  },
   "license": "MIT",
   "scripts": {
     "dev": "concurrently \"pnpm run dev:webapp\" \"pnpm run dev:electron\"",
