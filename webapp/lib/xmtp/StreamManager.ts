@@ -656,6 +656,17 @@ class XMTPStreamManager {
     console.log('[StreamManager] Phase 1 complete, hasCachedConversations:', hasCachedConversations);
 
     // Phase 2: Start streams for real-time updates
+    // Reset health state before starting streams
+    this.updateStreamHealth('healthy');
+    this.updateStreamStatus({
+      conversationStream: 'stopped',
+      messagesStream: 'stopped',
+      lastMessageReceivedAt: null,
+      lastConversationReceivedAt: null,
+      consecutiveFailures: 0,
+      fallbackSyncActive: false,
+    });
+
     this.startConversationStream();
     this.startAllMessagesStream();
 
@@ -3530,14 +3541,6 @@ class XMTPStreamManager {
     const status = store.get(streamStatusAtom);
     const consecutiveFailures = status.consecutiveFailures;
 
-    // Check if streams are stale (no data received for a while)
-    const messageAge = this.lastMessageReceivedAt
-      ? now - this.lastMessageReceivedAt
-      : Infinity;
-    const conversationAge = this.lastConversationReceivedAt
-      ? now - this.lastConversationReceivedAt
-      : Infinity;
-
     // If we've been stable for a while, reset failure counter
     if (consecutiveFailures > 0 && now - this.lastStableTime > STABLE_PERIOD_MS) {
       console.log('[StreamManager] Stable period reached, resetting failure counter');
@@ -3547,12 +3550,19 @@ class XMTPStreamManager {
       return;
     }
 
-    // Check if message stream is stale
-    // Only consider stale if we've been initialized for a while
-    const timeSinceInit = this.lastStableTime ? now - this.lastStableTime : 0;
-    if (timeSinceInit > STALE_THRESHOLD_MS && messageAge > STALE_THRESHOLD_MS) {
-      console.log(`[StreamManager] Message stream appears stale (${Math.round(messageAge / 1000)}s since last message)`);
-      this.attemptStreamRecovery('messages');
+    // Only check for stale streams if we've actually received data before
+    // (no data received yet is normal - it just means no new messages)
+    // AND if we have active failures to recover from
+    if (consecutiveFailures > 0) {
+      const messageAge = this.lastMessageReceivedAt
+        ? now - this.lastMessageReceivedAt
+        : null;
+
+      // Only trigger recovery if we HAD been receiving messages but stopped
+      if (messageAge !== null && messageAge > STALE_THRESHOLD_MS) {
+        console.log(`[StreamManager] Message stream appears stale (${Math.round(messageAge / 1000)}s since last message)`);
+        this.attemptStreamRecovery('messages');
+      }
     }
 
     // Update health status based on current state
