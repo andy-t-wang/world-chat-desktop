@@ -1,9 +1,8 @@
 "use client";
 
-import { useCallback, useRef, useEffect } from "react";
+import { useCallback, useRef } from "react";
 import { useSetAtom, useAtom } from "jotai";
 import type { Client } from "@xmtp/browser-sdk";
-import { toBytes } from "viem";
 import { clientLifecycleAtom, clientStateAtom } from "@/stores/client";
 import { streamManager } from "@/lib/xmtp/StreamManager";
 import { RemoteSigner } from "@/lib/signing-relay";
@@ -13,7 +12,7 @@ import {
   acquireTabLock,
   releaseTabLock,
 } from "@/lib/tab-lock";
-import { getSessionCache, setSessionCache, isElectron, deleteXmtpDatabase, deleteAllXmtpDatabases, checkXmtpDatabaseExists, listXmtpDatabases } from "@/lib/storage";
+import { getSessionCache, setSessionCache, isElectron, deleteXmtpDatabase, deleteAllXmtpDatabases } from "@/lib/storage";
 
 // Module cache for faster subsequent loads
 let cachedModules: Awaited<ReturnType<typeof loadAllModules>> | null = null;
@@ -117,34 +116,21 @@ export function useQRXmtpClient(): UseQRXmtpClientResult {
       return !!client;
     }
 
-    // Check if we need to clear the database (set by logout)
+    // Check if we need to clear the database (set by logout fallback)
     // This must happen BEFORE any XMTP client operations
     const pendingClear = localStorage.getItem('xmtp-pending-db-clear');
-    const debugLog = window.electronAPI?.debugLog;
-
-    debugLog?.('QRXmtpClient', 'restoreSession called', { pendingClear, hasClient: !!client });
-
     if (pendingClear === 'true') {
-      console.log('[QRXmtpClient] Pending DB clear flag found, deleting all XMTP databases...');
-      debugLog?.('QRXmtpClient', 'Pending DB clear flag found, deleting databases...');
       try {
         await deleteAllXmtpDatabases();
-        console.log('[QRXmtpClient] Successfully deleted all XMTP databases');
-        debugLog?.('QRXmtpClient', 'Successfully deleted all XMTP databases');
-      } catch (err) {
-        const errMsg = err instanceof Error ? err.message : String(err);
-        console.warn('[QRXmtpClient] Failed to delete XMTP databases:', err);
-        debugLog?.('QRXmtpClient', 'Failed to delete XMTP databases', { error: errMsg });
+      } catch {
+        // Ignore errors
       }
       localStorage.removeItem('xmtp-pending-db-clear');
-      // No session to restore - user logged out
       return false;
     }
 
     const cachedSession = await getSessionCache();
-    console.log('[QRXmtpClient] Cached session:', cachedSession ? { address: cachedSession.address, inboxId: cachedSession.inboxId, age: Date.now() - cachedSession.timestamp } : null);
     if (!cachedSession) {
-      console.log('[QRXmtpClient] No cached session, need QR login');
       return false;
     }
 
@@ -176,7 +162,6 @@ export function useQRXmtpClient(): UseQRXmtpClientResult {
 
       // Use Client.build() for faster session restoration
       // This skips signer initialization since the client is already registered
-      console.log('[QRXmtpClient] Attempting Client.build() for session restore...');
       const xmtpClient = await Client.build(
         {
           identifier: cachedSession.address.toLowerCase(),
@@ -186,9 +171,7 @@ export function useQRXmtpClient(): UseQRXmtpClientResult {
           env: "production",
           appVersion: "WorldChat/1.0.0",
           loggingLevel: LogLevel.Off,
-          // Explicitly set history sync URL for cross-device message sync
           historySyncUrl: "https://message-history.production.ephemera.network",
-          // v6 has built-in send methods - only need codecs for attachments and custom types
           codecs: [
             new AttachmentCodec(),
             new RemoteAttachmentCodec(),
@@ -199,32 +182,20 @@ export function useQRXmtpClient(): UseQRXmtpClientResult {
         }
       );
 
-      console.log('[QRXmtpClient] Client.build() succeeded, inboxId:', xmtpClient.inboxId);
-
-      // Verify identity is actually registered before proceeding
-      // Client.build() can succeed but identity may not be registered if previous login was interrupted
-      // Use preferences.sync() which requires network access and registered identity
+      // Verify identity is registered before proceeding
       try {
-        console.log('[QRXmtpClient] Verifying identity is registered (calling preferences.sync())...');
         await xmtpClient.preferences.sync();
-        console.log('[QRXmtpClient] Identity verified - sync succeeded');
       } catch (verifyError) {
         const verifyMsg = verifyError instanceof Error ? verifyError.message : String(verifyError);
-        console.error('[QRXmtpClient] Identity verification failed:', verifyMsg);
 
-        // Check if this is actually a database lock conflict, not true uninitialized identity
-        // OPFS SyncAccessHandle Pool VFS doesn't support multiple connections
-        // Error looks like: "Failed to execute 'createSyncAccessHandle'...Access Handles cannot be created if there is another open Access Handle"
+        // Check for database lock conflict
         if (verifyMsg.includes('Access Handle') || verifyMsg.includes('SyncAccessHandle') || verifyMsg.includes('createSyncAccessHandle')) {
-          console.error('[QRXmtpClient] Database locked by another tab/window - NOT clearing session');
           releaseTabLock();
           throw new Error("TAB_LOCKED");
         }
 
         if (verifyMsg.includes('Uninitialized identity') || verifyMsg.includes('register_identity')) {
-          console.error('[QRXmtpClient] Identity not registered, clearing database and session for re-login');
           releaseTabLock();
-          // Delete the OPFS database to prevent orphan installations from accumulating
           if (cachedSession.inboxId) {
             await deleteXmtpDatabase(cachedSession.inboxId);
           }
@@ -232,64 +203,42 @@ export function useQRXmtpClient(): UseQRXmtpClientResult {
           dispatch({ type: "INIT_ERROR", error: new Error("Identity registration incomplete. Please login again.") });
           return false;
         }
-        // Other errors - might be transient network issues, continue anyway
-        console.warn('[QRXmtpClient] Identity verification had non-fatal error, continuing');
+        // Other errors might be transient, continue
       }
 
-      // Update cache timestamp (async, don't await)
       if (xmtpClient.inboxId) {
         setSessionCache(cachedSession.address, xmtpClient.inboxId);
       }
 
       dispatch({ type: "INIT_SUCCESS", client: xmtpClient });
 
-      // Initialize StreamManager in background (don't block UI)
-      console.log('[QRXmtpClient] Starting StreamManager.initialize()...');
-      streamManager.initialize(xmtpClient).catch((error) => {
-        console.error(
-          "[QRXmtpClient] StreamManager initialization error:",
-          error
-        );
-      });
+      // Initialize StreamManager in background
+      streamManager.initialize(xmtpClient).catch(() => {});
 
       return true;
     } catch (error) {
-      console.error("[QRXmtpClient] Failed to restore session:", error);
-      console.error("[QRXmtpClient] Error details:", error instanceof Error ? { name: error.name, message: error.message, stack: error.stack } : error);
-
-      // Release the tab lock on failure
       releaseTabLock();
 
       const errorMessage =
         error instanceof Error ? error.message : String(error);
 
-      // Re-throw TAB_LOCKED so caller can handle it
       if (errorMessage === "TAB_LOCKED") {
         throw error;
       }
 
-      // Detect OPFS database lock conflict from Client.build() failure
-      // OPFS SyncAccessHandle Pool VFS doesn't support multiple connections
+      // Detect OPFS database lock conflict
       if (errorMessage.includes('Access Handle') || errorMessage.includes('SyncAccessHandle') || errorMessage.includes('createSyncAccessHandle')) {
-        console.error('[QRXmtpClient] Database locked by another tab/window');
         throw new Error("TAB_LOCKED");
       }
 
-      // Only clear session cache if OPFS database is truly gone
-      // Be VERY conservative - XMTP has installation limits (10 max, 250 changes)
-      // "Uninitialized identity" can be transient - don't auto-clear on that
-      // For other errors (network, temporary), keep session so user can retry
+      // Only clear session if OPFS database is truly gone
       const isDbGone =
         errorMessage.toLowerCase().includes("no local database") ||
         errorMessage.toLowerCase().includes("database not found") ||
         errorMessage.toLowerCase().includes("not found");
 
       if (isDbGone) {
-        console.warn("[QRXmtpClient] Local DB is gone, clearing stale session cache");
         clearSession();
-      } else {
-        // Keep session for other errors - user can retry or manually logout
-        console.warn("[QRXmtpClient] Keeping session despite error (may be temporary):", errorMessage);
       }
 
       dispatch({
@@ -325,27 +274,10 @@ export function useQRXmtpClient(): UseQRXmtpClientResult {
       dispatch({ type: "INIT_START" });
 
       const address = signer.getIdentifier().identifier;
-      console.log('[QRXmtpClient] ========== INITIALIZE WITH REMOTE SIGNER ==========');
-      console.log('[QRXmtpClient] Signer address:', address);
 
       try {
-        // Log current state BEFORE doing anything
         const existingSession = await getSessionCache();
-        const allDatabases = await listXmtpDatabases();
-        console.log('[QRXmtpClient] Existing session cache:', existingSession ? {
-          address: existingSession.address,
-          inboxId: existingSession.inboxId,
-          age: Date.now() - existingSession.timestamp
-        } : null);
-        console.log('[QRXmtpClient] OPFS databases found:', allDatabases);
 
-        // Check if DB exists for this session's inboxId
-        if (existingSession?.inboxId) {
-          const dbExists = await checkXmtpDatabaseExists(existingSession.inboxId);
-          console.log('[QRXmtpClient] DB exists for cached inboxId?', dbExists);
-        }
-
-        // Use cached modules for faster load
         const {
           Client,
           IdentifierKind,
@@ -361,9 +293,7 @@ export function useQRXmtpClient(): UseQRXmtpClientResult {
           env: "production" as const,
           appVersion: "WorldChat/1.0.0",
           loggingLevel: LogLevel.Off,
-          // Explicitly set history sync URL for cross-device message sync
           historySyncUrl: "https://message-history.production.ephemera.network",
-          // v6 has built-in send methods - only need codecs for attachments and custom types
           codecs: [
             new AttachmentCodec(),
             new RemoteAttachmentCodec(),
@@ -376,77 +306,35 @@ export function useQRXmtpClient(): UseQRXmtpClientResult {
         let xmtpClient;
 
         // Check if we have an existing session for THIS specific address
-        // Only try build() if session exists - otherwise it might fail due to
-        // DB existing for a different address
         const hasSessionForThisAddress =
           existingSession?.address?.toLowerCase() === address.toLowerCase();
 
-        console.log('[QRXmtpClient] Has session for this address?', hasSessionForThisAddress);
-
         if (hasSessionForThisAddress) {
-          // We have a session for this address - use build() to reuse installation
-          // Don't create new installation if build fails
-          console.log("[QRXmtpClient] Using Client.build() to reuse existing installation...");
-          try {
-            xmtpClient = await Client.build(
-              {
-                identifier: address.toLowerCase(),
-                identifierKind: IdentifierKind.Ethereum,
-              },
-              clientOptions
-            );
-            console.log("[QRXmtpClient] Client.build() succeeded, inboxId:", xmtpClient.inboxId);
-          } catch (buildError) {
-            // Session exists but build failed - something is wrong
-            // Don't auto-create, let user see the error and retry
-            console.error("[QRXmtpClient] Client.build() failed for existing session:", buildError);
-            throw buildError;
-          }
+          // Reuse existing installation
+          xmtpClient = await Client.build(
+            {
+              identifier: address.toLowerCase(),
+              identifierKind: IdentifierKind.Ethereum,
+            },
+            clientOptions
+          );
         } else {
-          // No session for this address - this is a fresh login, use create()
-          console.log("[QRXmtpClient] No existing session - using Client.create() for fresh login...");
-          console.log("[QRXmtpClient] Starting Client.create() at:", new Date().toISOString());
-
-          try {
-            xmtpClient = await Client.create(signer, clientOptions);
-            console.log("[QRXmtpClient] Client.create() succeeded at:", new Date().toISOString());
-            console.log("[QRXmtpClient] New client inboxId:", xmtpClient.inboxId);
-          } catch (createError) {
-            console.error("[QRXmtpClient] Client.create() FAILED:", createError);
-            console.error("[QRXmtpClient] Create error details:", createError instanceof Error ? {
-              name: createError.name,
-              message: createError.message,
-              stack: createError.stack
-            } : createError);
-
-            // Log state after failure
-            const dbsAfterFail = await listXmtpDatabases();
-            console.error("[QRXmtpClient] OPFS databases after create failure:", dbsAfterFail);
-            throw createError;
-          }
+          // Fresh login
+          xmtpClient = await Client.create(signer, clientOptions);
         }
 
-        // Verify identity is registered BEFORE caching session
-        console.log('[QRXmtpClient] Verifying identity registration with preferences.sync()...');
+        // Verify identity is registered before caching session
         try {
           await xmtpClient.preferences.sync();
-          console.log('[QRXmtpClient] Identity verification PASSED - sync succeeded');
         } catch (verifyError) {
           const verifyMsg = verifyError instanceof Error ? verifyError.message : String(verifyError);
-          console.error('[QRXmtpClient] Identity verification FAILED:', verifyMsg);
 
-          // Check if this is actually a database lock conflict, not true uninitialized identity
           if (verifyMsg.includes('Access Handle') || verifyMsg.includes('SyncAccessHandle') || verifyMsg.includes('createSyncAccessHandle')) {
-            console.error('[QRXmtpClient] Database locked by another tab/window - NOT clearing session');
             releaseTabLock();
             throw new Error("TAB_LOCKED");
           }
 
           if (verifyMsg.includes('Uninitialized identity') || verifyMsg.includes('register_identity')) {
-            console.error('[QRXmtpClient] CRITICAL: Client created but identity not registered!');
-            console.error('[QRXmtpClient] This means registration was interrupted');
-
-            // Clean up the corrupted state
             if (xmtpClient.inboxId) {
               await deleteXmtpDatabase(xmtpClient.inboxId);
             }
@@ -456,35 +344,17 @@ export function useQRXmtpClient(): UseQRXmtpClientResult {
             throw new Error("Identity registration incomplete");
           }
           // Other errors might be transient, continue
-          console.warn('[QRXmtpClient] Non-fatal verification error, continuing');
         }
 
-        // Cache session for page reloads
-        console.log('[QRXmtpClient] Caching session for address:', address, 'inboxId:', xmtpClient.inboxId);
         if (xmtpClient.inboxId) {
           setSessionCache(address, xmtpClient.inboxId);
         }
 
-        // Log final state
-        const finalDbs = await listXmtpDatabases();
-        console.log('[QRXmtpClient] OPFS databases after success:', finalDbs);
-        console.log('[QRXmtpClient] ========== INITIALIZATION COMPLETE ==========');
-
         dispatch({ type: "INIT_SUCCESS", client: xmtpClient });
 
-        // Initialize StreamManager in background (don't block UI)
-        streamManager.initialize(xmtpClient).catch((error) => {
-          console.error(
-            "[QRXmtpClient] StreamManager initialization error:",
-            error
-          );
-        });
+        // Initialize StreamManager in background
+        streamManager.initialize(xmtpClient).catch(() => {});
       } catch (error) {
-        console.error(
-          "Failed to initialize XMTP client with remote signer:",
-          error
-        );
-        // Release the tab lock on failure
         releaseTabLock();
         dispatch({
           type: "INIT_ERROR",

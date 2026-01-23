@@ -39,9 +39,7 @@ import {
 import { streamManager } from "@/lib/xmtp/StreamManager";
 import { clearSession } from "@/lib/auth/session";
 import {
-  getSessionCache,
   clearSessionCache,
-  deleteXmtpDatabase,
   deleteAllXmtpDatabases,
 } from "@/lib/storage";
 
@@ -92,6 +90,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
   const [isDeletingModels, setIsDeletingModels] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  const [clearLocalData, setClearLocalData] = useState(false);
 
   // Download link
   const BASE_URL = process.env.NEXT_PUBLIC_URL || "https://world-chat-web.vercel.app";
@@ -159,35 +158,29 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [onClose]);
 
-  const handleLogout = async () => {
+  const handleLogout = async (shouldClearLocalData: boolean) => {
     if (isLoggingOut) return;
     setIsLoggingOut(true);
 
-    const debugLog = window.electronAPI?.debugLog;
-    debugLog?.('Logout', 'Starting logout process');
-
     try {
-      // Cleanup streams first
       streamManager.cleanup();
-      debugLog?.('Logout', 'Streams cleaned up');
-
-      // Clear session data
       clearSession();
       await clearSessionCache();
-      debugLog?.('Logout', 'Session cleared');
 
-      // Set flag to delete database on next startup (before XMTP client is created)
-      // This is necessary because WASM holds a file lock on the database
-      localStorage.setItem('xmtp-pending-db-clear', 'true');
-      console.log('[Logout] Set pending DB clear flag');
-      debugLog?.('Logout', 'Set pending DB clear flag', { flag: localStorage.getItem('xmtp-pending-db-clear') });
+      // If user opted to clear local data, delete XMTP databases
+      // This helps recover from database corruption
+      if (shouldClearLocalData) {
+        try {
+          await deleteAllXmtpDatabases();
+        } catch {
+          // If deletion fails, set flag for next startup
+          localStorage.setItem('xmtp-pending-db-clear', 'true');
+        }
+      }
 
-      // Redirect to login - database will be deleted on next startup
       window.location.href = "/";
     } catch (error) {
-      const errMsg = error instanceof Error ? error.message : String(error);
       console.error("Logout failed:", error);
-      debugLog?.('Logout', 'Logout failed', { error: errMsg });
       setIsLoggingOut(false);
     }
   };
@@ -670,13 +663,40 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
               <h3 className="text-[16px] font-semibold text-[var(--text-primary)] mb-2">
                 Log out?
               </h3>
-              <p className="text-[14px] text-[var(--text-secondary)]">
+              <p className="text-[14px] text-[var(--text-secondary)] mb-4">
                 Are you sure you want to log out of your account?
               </p>
+              {/* Clear local data checkbox */}
+              <label className="flex items-start gap-3 cursor-pointer group">
+                <div className="relative flex-shrink-0 mt-0.5">
+                  <input
+                    type="checkbox"
+                    checked={clearLocalData}
+                    onChange={(e) => setClearLocalData(e.target.checked)}
+                    className="sr-only peer"
+                  />
+                  <div className="w-5 h-5 border-2 border-[var(--border-strong)] rounded transition-colors peer-checked:bg-[var(--accent-blue)] peer-checked:border-[var(--accent-blue)] group-hover:border-[var(--text-tertiary)]">
+                    {clearLocalData && (
+                      <svg className="w-full h-full text-white" viewBox="0 0 20 20" fill="currentColor">
+                        <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                      </svg>
+                    )}
+                  </div>
+                </div>
+                <div className="flex-1">
+                  <p className="text-[14px] text-[var(--text-primary)]">Clear local data</p>
+                  <p className="text-[12px] text-[var(--text-tertiary)]">
+                    Helps fix sync issues. Messages will be restored from the network.
+                  </p>
+                </div>
+              </label>
             </div>
             <div className="flex border-t border-[var(--border-default)]">
               <button
-                onClick={() => setShowLogoutConfirm(false)}
+                onClick={() => {
+                  setShowLogoutConfirm(false);
+                  setClearLocalData(false);
+                }}
                 className="flex-1 py-3 text-[14px] font-medium text-[var(--accent-blue)] hover:bg-[var(--bg-hover)] transition-colors"
               >
                 Cancel
@@ -684,7 +704,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
               <button
                 onClick={() => {
                   setShowLogoutConfirm(false);
-                  handleLogout();
+                  handleLogout(clearLocalData);
                 }}
                 className="flex-1 py-3 text-[14px] font-medium text-red-500 hover:bg-[var(--bg-hover)] transition-colors border-l border-[var(--border-default)]"
               >

@@ -32,6 +32,9 @@ export function NewConversationModal({
   const [, setSelectedConversationId] = useAtom(selectedConversationIdAtom);
   const { canMessage } = useCanMessage();
 
+  // Get current user's address for self-detection
+  const currentAddress = client?.accountIdentifier?.identifier;
+
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<UsernameRecord[]>([]);
   const [isSearching, setIsSearching] = useState(false);
@@ -67,32 +70,43 @@ export function NewConversationModal({
             minimized_profile_picture_url: null,
           },
         ]);
-        // Check if this address can receive messages
-        setCanMessageStatus((prev) => ({
-          ...prev,
-          [searchQuery.toLowerCase()]: "checking",
-        }));
-        const canReceive = await canMessage(searchQuery);
-        setCanMessageStatus((prev) => ({
-          ...prev,
-          [searchQuery.toLowerCase()]: canReceive,
-        }));
+        // Skip canMessage check for self (always allow), otherwise check
+        const addressLower = searchQuery.toLowerCase();
+        if (addressLower === currentAddress?.toLowerCase()) {
+          setCanMessageStatus((prev) => ({ ...prev, [addressLower]: true }));
+        } else {
+          setCanMessageStatus((prev) => ({
+            ...prev,
+            [addressLower]: "checking",
+          }));
+          const canReceive = await canMessage(searchQuery);
+          setCanMessageStatus((prev) => ({
+            ...prev,
+            [addressLower]: canReceive,
+          }));
+        }
       } else {
         // Search by username
         const results = await searchUsernames(searchQuery);
         setSearchResults(results);
 
-        // Check canMessage for all results
+        // Check canMessage for all results (skip for self)
         for (const result of results) {
-          setCanMessageStatus((prev) => ({
-            ...prev,
-            [result.address.toLowerCase()]: "checking",
-          }));
-          const canReceive = await canMessage(result.address);
-          setCanMessageStatus((prev) => ({
-            ...prev,
-            [result.address.toLowerCase()]: canReceive,
-          }));
+          const addressLower = result.address.toLowerCase();
+          if (addressLower === currentAddress?.toLowerCase()) {
+            // Self always allowed
+            setCanMessageStatus((prev) => ({ ...prev, [addressLower]: true }));
+          } else {
+            setCanMessageStatus((prev) => ({
+              ...prev,
+              [addressLower]: "checking",
+            }));
+            const canReceive = await canMessage(result.address);
+            setCanMessageStatus((prev) => ({
+              ...prev,
+              [addressLower]: canReceive,
+            }));
+          }
         }
       }
     } catch (err) {
@@ -101,7 +115,7 @@ export function NewConversationModal({
     } finally {
       setIsSearching(false);
     }
-  }, [searchQuery, canMessage]);
+  }, [searchQuery, canMessage, currentAddress]);
 
   // Debounced auto-search - triggers 250ms after user stops typing
   useEffect(() => {
@@ -129,9 +143,9 @@ export function NewConversationModal({
     };
   }, [searchQuery, handleSearch]);
 
-  // Create a new DM conversation
+  // Create a new DM conversation (or Notes group for self)
   const handleCreateConversation = useCallback(
-    async (address: string) => {
+    async (address: string, username?: string) => {
       if (!client) {
         setError("XMTP client not initialized");
         return;
@@ -142,21 +156,52 @@ export function NewConversationModal({
       setError(null);
 
       try {
-        const identifier: Identifier = {
-          identifier: address.toLowerCase(),
-          identifierKind: IdentifierKind.Ethereum,
-        };
+        const isSelf = address.toLowerCase() === currentAddress?.toLowerCase();
 
-        // Create or find existing DM using identifier
-        const conversation = await client.conversations.createDmWithIdentifier(
-          identifier
-        );
+        if (isSelf) {
+          // Notes to Self: Create a one-person group chat
+          // First check if one already exists
+          const existingConversations = await client.conversations.list();
+          const existingNotesGroup = existingConversations.find((conv) => {
+            // Check if it's a group (not a DM) with only self as member
+            // Groups have a 'name' property, DMs don't
+            if ("name" in conv && typeof conv.name === "function") {
+              // It's a group - check member count
+              // A notes group would have been created with empty array (just creator)
+              return conv.members && conv.members.length === 1;
+            }
+            return false;
+          });
 
-        // Register the conversation with StreamManager (stores it, builds metadata)
-        await streamManager.registerNewConversation(conversation);
+          if (existingNotesGroup) {
+            // Open existing notes group
+            setSelectedConversationId(existingNotesGroup.id);
+          } else {
+            // Create new one-person group with username as name
+            const groupName = username ? `${username}'s Notes` : "Notes to Self";
+            const group = await client.conversations.newGroup([], {
+              name: groupName,
+            });
+            await streamManager.registerNewConversation(group);
+            setSelectedConversationId(group.id);
+          }
+        } else {
+          // Regular DM with another user
+          const identifier: Identifier = {
+            identifier: address.toLowerCase(),
+            identifierKind: IdentifierKind.Ethereum,
+          };
 
-        // Select the new conversation
-        setSelectedConversationId(conversation.id);
+          // Create or find existing DM using identifier
+          const conversation =
+            await client.conversations.createDmWithIdentifier(identifier);
+
+          // Register the conversation with StreamManager (stores it, builds metadata)
+          await streamManager.registerNewConversation(conversation);
+
+          // Select the new conversation
+          setSelectedConversationId(conversation.id);
+        }
 
         // Close the modal
         onClose();
@@ -170,7 +215,7 @@ export function NewConversationModal({
         setSelectedAddress(null);
       }
     },
-    [client, setSelectedConversationId, onClose]
+    [client, currentAddress, setSelectedConversationId, onClose]
   );
 
   // Handle key press in search input
@@ -248,7 +293,8 @@ export function NewConversationModal({
                   <button
                     key={result.address}
                     onClick={() =>
-                      canReceive && handleCreateConversation(result.address)
+                      canReceive &&
+                      handleCreateConversation(result.address, result.username)
                     }
                     disabled={!canReceive || isCreating}
                     className="w-full flex items-center gap-3 px-4 py-3 hover:bg-[var(--bg-hover)] disabled:hover:bg-[var(--bg-primary)] disabled:cursor-not-allowed transition-colors"
@@ -300,7 +346,7 @@ export function NewConversationModal({
         {/* Footer hint */}
         <div className="p-4 border-t border-[var(--border-subtle)] bg-[var(--bg-secondary)]">
           <p className="text-xs text-[var(--text-tertiary)] text-center">
-            Only DM creation is supported for now.
+            Search for yourself to create a Notes group.
           </p>
         </div>
       </div>

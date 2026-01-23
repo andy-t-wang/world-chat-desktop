@@ -53,7 +53,9 @@ function detectPlatform(): Platform {
           if (gl) {
             const debugInfo = gl.getExtension("WEBGL_debug_renderer_info");
             if (debugInfo) {
-              const renderer = gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL);
+              const renderer = gl.getParameter(
+                debugInfo.UNMASKED_RENDERER_WEBGL,
+              );
               return renderer.includes("Apple M");
             }
           }
@@ -81,13 +83,20 @@ function detectPlatform(): Platform {
 
 function getAssetForPlatform(
   assets: ReleaseAsset[],
-  platform: Platform
+  platform: Platform,
 ): ReleaseAsset | null {
   switch (platform) {
     case "mac-arm64":
-      return assets.find((a) => a.name.includes("arm64") && a.name.endsWith(".dmg")) || null;
+      return (
+        assets.find(
+          (a) => a.name.includes("arm64") && a.name.endsWith(".dmg"),
+        ) || null
+      );
     case "mac-x64":
-      return assets.find((a) => a.name.includes("x64") && a.name.endsWith(".dmg")) || null;
+      return (
+        assets.find((a) => a.name.includes("x64") && a.name.endsWith(".dmg")) ||
+        null
+      );
     case "windows":
       return assets.find((a) => a.name.endsWith(".exe")) || null;
     case "linux":
@@ -97,7 +106,13 @@ function getAssetForPlatform(
   }
 }
 
-function PlatformIcon({ type, className }: { type: "apple" | "windows" | "linux"; className?: string }) {
+function PlatformIcon({
+  type,
+  className,
+}: {
+  type: "apple" | "windows" | "linux";
+  className?: string;
+}) {
   if (type === "apple") {
     return <Apple className={className} />;
   }
@@ -185,7 +200,7 @@ export default function DownloadPage() {
     {
       platform: "mac-arm64",
       label: "Download for Mac",
-      sublabel: "Apple Silicon (M1/M2/M3/M4)",
+      sublabel: "Apple Silicon (M-series)",
       icon: "apple",
       asset: getAssetForPlatform(assets, "mac-arm64"),
       requirements: "Requires macOS 11 Big Sur or later",
@@ -223,7 +238,7 @@ export default function DownloadPage() {
 
   // Other download options
   const otherOptions = downloadOptions.filter(
-    (o) => o.platform !== recommendedOption.platform && o.asset
+    (o) => o.platform !== recommendedOption.platform && o.asset,
   );
 
   // Get title based on detected platform
