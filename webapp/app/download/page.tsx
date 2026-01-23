@@ -145,7 +145,7 @@ function DownloadButton({
   return (
     <a
       href={option.asset.browser_download_url}
-      className={`flex items-center gap-3 px-5 py-3 rounded-xl transition-colors w-full ${
+      className={`flex items-center gap-3 px-5 py-3 rounded-xl transition-colors max-w-xs mx-auto ${
         primary
           ? "bg-[#1D1D1F] text-white hover:bg-[#333]"
           : "bg-[#F5F5F7] text-[#1D1D1F] hover:bg-[#E8E8ED]"

@@ -179,7 +179,9 @@ export function NewConversationModal({
           } else {
             // Create new one-person group with username as name
             const groupName = username ? `${username}'s Notes` : "Notes to Self";
-            const group = await client.conversations.newGroup([], {
+            // Type assertion needed - newGroup exists at runtime but SDK types are incomplete
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const group = await (client.conversations as any).newGroup([], {
               name: groupName,
             });
             await streamManager.registerNewConversation(group);

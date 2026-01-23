@@ -94,5 +94,7 @@ export {
   globalErrorAtom,
   isOnlineAtom,
   isReconnectingAtom,
+  streamHealthAtom,
+  streamStatusAtom,
 } from './ui';
-export type { ModalType, Toast, Theme } from './ui';
+export type { ModalType, Toast, Theme, StreamHealthStatus, StreamStatus } from './ui';

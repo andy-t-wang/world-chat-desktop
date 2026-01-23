@@ -182,3 +182,30 @@ export interface ReplyingTo {
 }
 
 export const replyingToAtom = atom<ReplyingTo | null>(null);
+
+/**
+ * Stream health status for XMTP connection monitoring
+ */
+export type StreamHealthStatus = 'healthy' | 'reconnecting' | 'degraded' | 'offline';
+export const streamHealthAtom = atom<StreamHealthStatus>('healthy');
+
+/**
+ * Detailed stream status for debugging and UI feedback
+ */
+export interface StreamStatus {
+  conversationStream: 'running' | 'stopped' | 'restarting';
+  messagesStream: 'running' | 'stopped' | 'restarting';
+  lastMessageReceivedAt: number | null;
+  lastConversationReceivedAt: number | null;
+  consecutiveFailures: number;
+  fallbackSyncActive: boolean;
+}
+
+export const streamStatusAtom = atom<StreamStatus>({
+  conversationStream: 'stopped',
+  messagesStream: 'stopped',
+  lastMessageReceivedAt: null,
+  lastConversationReceivedAt: null,
+  consecutiveFailures: 0,
+  fallbackSyncActive: false,
+});

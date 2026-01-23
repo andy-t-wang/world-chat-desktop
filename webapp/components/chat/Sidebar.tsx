@@ -9,6 +9,7 @@ import { SettingsPanel } from './SettingsPanel';
 import { NotificationBanner } from './NotificationBanner';
 import { DownloadAppBanner } from './DownloadAppBanner';
 import { UpdateBanner } from './UpdateBanner';
+import { ReconnectionBanner } from './ReconnectionBanner';
 import { settingsPanelOpenAtom } from '@/stores/settings';
 import { showMessageRequestsAtom } from '@/stores/ui';
 import { useMessageRequests } from '@/hooks/useConversations';
@@ -141,6 +142,9 @@ export function Sidebar({ onNewChat, className, width }: SidebarProps) {
           )}
         </div>
       </header>
+
+      {/* Stream Health / Reconnection Banner */}
+      <ReconnectionBanner />
 
       {/* Notification Permission Banner */}
       <NotificationBanner />

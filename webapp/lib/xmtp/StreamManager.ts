@@ -28,7 +28,10 @@ import {
   selectedConversationIdAtom,
   reactionsAtom,
   reactionsVersionAtom,
+  streamHealthAtom,
+  streamStatusAtom,
 } from '@/stores';
+import type { StreamHealthStatus, StreamStatus } from '@/stores';
 import type { ReactionContent, StoredReaction } from '@/stores/messages';
 import type { DecodedMessage } from '@xmtp/browser-sdk';
 import type { PaginationState, DisplayReaction } from '@/types/messages';
@@ -255,8 +258,15 @@ const MAX_FETCH_ITERATIONS = 5;     // Max iterations to prevent infinite loops
 const BACKGROUND_REFRESH_LIMIT = 100; // Limit for background sync refreshes
 
 // Stream restart configuration
-const STREAM_RESTART_DELAY_MS = 2000;  // Wait before restarting crashed stream
-const MAX_STREAM_RESTARTS = 5;          // Max restart attempts before giving up
+const STREAM_RESTART_DELAY_MS = 2000;  // Initial delay before restarting crashed stream
+const MAX_STREAM_RESTART_DELAY_MS = 60000; // Max delay with exponential backoff (60s)
+const MAX_STREAM_RESTARTS = 5;          // Max restart attempts before degraded mode
+
+// Health monitoring configuration
+const HEALTH_CHECK_INTERVAL_MS = 30000; // Check health every 30 seconds
+const STALE_THRESHOLD_MS = 120000;      // 2 minutes without activity = stale
+const STABLE_PERIOD_MS = 300000;        // 5 minutes stable = reset failure counter
+const FALLBACK_SYNC_INTERVAL_MS = 60000; // Sync every 60 seconds when degraded
 
 // Timeout for XMTP operations to prevent hangs on forked groups
 // Messages should load from local cache almost instantly - if it takes >3s something is wrong
@@ -488,6 +498,13 @@ class XMTPStreamManager {
   private conversationStreamRestarts = 0;
   private allMessagesStreamRestarts = 0;
 
+  // Health monitoring properties
+  private lastMessageReceivedAt: number | null = null;
+  private lastConversationReceivedAt: number | null = null;
+  private healthCheckInterval: ReturnType<typeof setInterval> | null = null;
+  private lastStableTime: number = Date.now();
+  private fallbackSyncInterval: ReturnType<typeof setInterval> | null = null;
+
   // Track when user last read each conversation (for unread counts)
   private lastReadTimestamps = new Map<string, bigint>();
 
@@ -641,6 +658,9 @@ class XMTPStreamManager {
     // Phase 2: Start streams for real-time updates
     this.startConversationStream();
     this.startAllMessagesStream();
+
+    // Phase 2.5: Start health monitoring
+    this.startHealthMonitoring();
 
     // Phase 3: Sync preferences (including history sync from other devices)
     // Note: We intentionally don't clear session on errors here - that's the auth layer's job
@@ -1668,13 +1688,26 @@ class XMTPStreamManager {
 
     const stream = async () => {
       try {
+        // Update stream status
+        this.updateStreamStatus({ conversationStream: 'running' });
+
         const streamProxy = await this.client!.conversations.stream();
 
         // Reset restart counter on successful connection
         this.conversationStreamRestarts = 0;
+        this.lastStableTime = Date.now();
+
+        // Check if we can reset to healthy
+        const status = store.get(streamStatusAtom);
+        if (status.consecutiveFailures < 3 && store.get(streamHealthAtom) === 'reconnecting') {
+          this.updateStreamHealth('healthy');
+        }
 
         for await (const conv of streamProxy as AsyncIterable<Conversation>) {
           if (signal.aborted) break;
+
+          // Mark activity for health tracking
+          this.markConversationActivity();
 
           console.log('[StreamManager] Conversation stream received:', conv.id, isDm(conv) ? 'DM' : 'Group');
 
@@ -1744,25 +1777,8 @@ class XMTPStreamManager {
           }
         }
       } catch (error) {
-        if (signal.aborted) return; // Intentional abort, don't restart
-
-        // Check for database corruption
-        if (this.checkForDatabaseCorruption(error)) {
-          console.error('[StreamManager] Conversation stream stopped due to database corruption');
-          return; // Don't restart if database is corrupted
-        }
-
-        // Attempt restart if under limit
-        if (this.conversationStreamRestarts < MAX_STREAM_RESTARTS) {
-          this.conversationStreamRestarts++;
-          const delay = STREAM_RESTART_DELAY_MS * this.conversationStreamRestarts;
-
-          setTimeout(() => {
-            if (!signal.aborted && this.client && !this.databaseCorrupted) {
-              this.startConversationStream();
-            }
-          }, delay);
-        }
+        this.updateStreamStatus({ conversationStream: 'stopped' });
+        this.handleStreamError(error, 'conversations', signal);
       }
     };
 
@@ -2179,6 +2195,9 @@ class XMTPStreamManager {
 
     const stream = async () => {
       try {
+        // Update stream status
+        this.updateStreamStatus({ messagesStream: 'running' });
+
         // Stream both Allowed AND Unknown - we'll handle consent inline
         // This catches conversations where consent changed on another device
         const streamProxy = await this.client!.conversations.streamAllMessages({
@@ -2187,9 +2206,19 @@ class XMTPStreamManager {
 
         // Reset restart counter on successful connection
         this.allMessagesStreamRestarts = 0;
+        this.lastStableTime = Date.now();
+
+        // Check if we can reset to healthy
+        const status = store.get(streamStatusAtom);
+        if (status.consecutiveFailures < 3 && store.get(streamHealthAtom) === 'reconnecting') {
+          this.updateStreamHealth('healthy');
+        }
 
         for await (const msg of streamProxy as AsyncIterable<{ id: string; conversationId: string; content: unknown; sentAtNs: bigint; senderInboxId: string; contentType?: { typeId?: string; authorityId?: string }; kind?: string }>) {
           if (signal.aborted) break;
+
+          // Mark activity for health tracking
+          this.markMessageActivity();
 
           const conversationId = msg.conversationId;
           const hasMetadata = this.conversationMetadata.has(conversationId);
@@ -2522,24 +2551,8 @@ class XMTPStreamManager {
           }
         }
       } catch (error) {
-        if (signal.aborted) return;
-
-        // Check for database corruption
-        if (this.checkForDatabaseCorruption(error)) {
-          console.error('[StreamManager] Message stream stopped due to database corruption');
-          return; // Don't restart if database is corrupted
-        }
-
-        if (this.allMessagesStreamRestarts < MAX_STREAM_RESTARTS) {
-          this.allMessagesStreamRestarts++;
-          const delay = STREAM_RESTART_DELAY_MS * this.allMessagesStreamRestarts;
-
-          setTimeout(() => {
-            if (!signal.aborted && this.client && !this.databaseCorrupted) {
-              this.startAllMessagesStream();
-            }
-          }, delay);
-        }
+        this.updateStreamStatus({ messagesStream: 'stopped' });
+        this.handleStreamError(error, 'messages', signal);
       }
     };
 
@@ -3461,6 +3474,342 @@ class XMTPStreamManager {
   }
 
   /**
+   * Update stream health status
+   */
+  private updateStreamHealth(status: StreamHealthStatus): void {
+    const current = store.get(streamHealthAtom);
+    if (current !== status) {
+      console.log(`[StreamManager] Stream health changed: ${current} -> ${status}`);
+      store.set(streamHealthAtom, status);
+    }
+  }
+
+  /**
+   * Update stream status details
+   */
+  private updateStreamStatus(updates: Partial<StreamStatus>): void {
+    const current = store.get(streamStatusAtom);
+    store.set(streamStatusAtom, { ...current, ...updates });
+  }
+
+  /**
+   * Get the delay for stream restart with exponential backoff and jitter
+   */
+  private getRestartDelay(restartCount: number): number {
+    // Exponential backoff: 2s, 4s, 8s, 16s, 32s, 60s (capped)
+    const baseDelay = STREAM_RESTART_DELAY_MS * Math.pow(2, restartCount);
+    const cappedDelay = Math.min(baseDelay, MAX_STREAM_RESTART_DELAY_MS);
+    // Add random jitter (up to 25% of delay) to prevent thundering herd
+    const jitter = Math.random() * cappedDelay * 0.25;
+    return cappedDelay + jitter;
+  }
+
+  /**
+   * Start health monitoring interval
+   */
+  private startHealthMonitoring(): void {
+    if (this.healthCheckInterval) {
+      clearInterval(this.healthCheckInterval);
+    }
+
+    console.log('[StreamManager] Starting health monitoring');
+    this.lastStableTime = Date.now();
+
+    this.healthCheckInterval = setInterval(() => {
+      this.checkStreamHealth();
+    }, HEALTH_CHECK_INTERVAL_MS);
+  }
+
+  /**
+   * Check stream health and trigger recovery if needed
+   */
+  private checkStreamHealth(): void {
+    if (!this.client) return;
+
+    const now = Date.now();
+    const status = store.get(streamStatusAtom);
+    const consecutiveFailures = status.consecutiveFailures;
+
+    // Check if streams are stale (no data received for a while)
+    const messageAge = this.lastMessageReceivedAt
+      ? now - this.lastMessageReceivedAt
+      : Infinity;
+    const conversationAge = this.lastConversationReceivedAt
+      ? now - this.lastConversationReceivedAt
+      : Infinity;
+
+    // If we've been stable for a while, reset failure counter
+    if (consecutiveFailures > 0 && now - this.lastStableTime > STABLE_PERIOD_MS) {
+      console.log('[StreamManager] Stable period reached, resetting failure counter');
+      this.updateStreamStatus({ consecutiveFailures: 0 });
+      this.updateStreamHealth('healthy');
+      this.stopFallbackSync();
+      return;
+    }
+
+    // Check if message stream is stale
+    // Only consider stale if we've been initialized for a while
+    const timeSinceInit = this.lastStableTime ? now - this.lastStableTime : 0;
+    if (timeSinceInit > STALE_THRESHOLD_MS && messageAge > STALE_THRESHOLD_MS) {
+      console.log(`[StreamManager] Message stream appears stale (${Math.round(messageAge / 1000)}s since last message)`);
+      this.attemptStreamRecovery('messages');
+    }
+
+    // Update health status based on current state
+    if (consecutiveFailures >= 3) {
+      this.updateStreamHealth('degraded');
+      // Start fallback sync if not already running
+      if (!status.fallbackSyncActive) {
+        this.startFallbackSync();
+      }
+    } else if (consecutiveFailures > 0) {
+      this.updateStreamHealth('reconnecting');
+    }
+  }
+
+  /**
+   * Attempt to recover a stream
+   */
+  private attemptStreamRecovery(streamType: 'conversations' | 'messages'): void {
+    const status = store.get(streamStatusAtom);
+    const newFailureCount = status.consecutiveFailures + 1;
+
+    console.log(`[StreamManager] Attempting ${streamType} stream recovery (failure #${newFailureCount})`);
+    this.updateStreamStatus({ consecutiveFailures: newFailureCount });
+
+    if (streamType === 'conversations') {
+      this.conversationStreamController?.abort();
+      this.startConversationStream();
+    } else {
+      this.allMessagesStreamController?.abort();
+      this.startAllMessagesStream();
+    }
+
+    // Update health status
+    if (newFailureCount >= 3) {
+      this.updateStreamHealth('degraded');
+      this.startFallbackSync();
+    } else {
+      this.updateStreamHealth('reconnecting');
+    }
+  }
+
+  /**
+   * Start fallback sync mechanism when streams are degraded
+   */
+  private startFallbackSync(): void {
+    if (this.fallbackSyncInterval) return;
+
+    console.log('[StreamManager] Starting fallback sync');
+    this.updateStreamStatus({ fallbackSyncActive: true });
+
+    this.fallbackSyncInterval = setInterval(() => {
+      this.performFallbackSync();
+    }, FALLBACK_SYNC_INTERVAL_MS);
+
+    // Perform immediate sync
+    this.performFallbackSync();
+  }
+
+  /**
+   * Stop fallback sync mechanism
+   */
+  private stopFallbackSync(): void {
+    if (!this.fallbackSyncInterval) return;
+
+    console.log('[StreamManager] Stopping fallback sync');
+    clearInterval(this.fallbackSyncInterval);
+    this.fallbackSyncInterval = null;
+    this.updateStreamStatus({ fallbackSyncActive: false });
+  }
+
+  /**
+   * Perform a fallback sync to keep data fresh when streams are failing
+   */
+  private async performFallbackSync(): Promise<void> {
+    if (!this.client) return;
+
+    // Don't sync if translation is in progress
+    if (this.translationInProgress) {
+      console.log('[StreamManager] Skipping fallback sync - translation in progress');
+      return;
+    }
+
+    console.log('[StreamManager] Performing fallback sync');
+    try {
+      // Sync conversation list
+      await this.client.conversations.sync();
+
+      // Sync all conversations
+      await this.client.conversations.syncAll([ConsentState.Allowed, ConsentState.Unknown]);
+
+      // Sync messages for the selected conversation if any
+      const selectedId = store.get(selectedConversationIdAtom);
+      if (selectedId) {
+        const conv = this.conversations.get(selectedId);
+        if (conv) {
+          await conv.sync();
+          // Refresh messages for the selected conversation
+          await this.refreshLoadedConversations();
+        }
+      }
+
+      // Update last activity timestamps to reflect successful sync
+      this.lastMessageReceivedAt = Date.now();
+      this.lastConversationReceivedAt = Date.now();
+
+      console.log('[StreamManager] Fallback sync completed');
+    } catch (error) {
+      console.error('[StreamManager] Fallback sync error:', error);
+      this.checkForDatabaseCorruption(error);
+    }
+  }
+
+  /**
+   * Manual reconnect - triggered by user clicking Retry button
+   */
+  manualReconnect(): void {
+    console.log('[StreamManager] Manual reconnect requested');
+
+    // Reset failure counter
+    this.updateStreamStatus({ consecutiveFailures: 0 });
+    this.conversationStreamRestarts = 0;
+    this.allMessagesStreamRestarts = 0;
+    this.lastStableTime = Date.now();
+
+    // Update health status
+    this.updateStreamHealth('reconnecting');
+
+    // Stop fallback sync since we're trying to recover
+    this.stopFallbackSync();
+
+    // Restart streams
+    this.conversationStreamController?.abort();
+    this.allMessagesStreamController?.abort();
+    this.startConversationStream();
+    this.startAllMessagesStream();
+  }
+
+  /**
+   * Mark activity for health tracking - conversation received
+   */
+  private markConversationActivity(): void {
+    this.lastConversationReceivedAt = Date.now();
+    this.updateStreamStatus({ lastConversationReceivedAt: this.lastConversationReceivedAt });
+
+    // Reset to healthy if we were reconnecting
+    const health = store.get(streamHealthAtom);
+    if (health === 'reconnecting') {
+      this.lastStableTime = Date.now();
+      const status = store.get(streamStatusAtom);
+      if (status.consecutiveFailures < 3) {
+        this.updateStreamHealth('healthy');
+      }
+    }
+  }
+
+  /**
+   * Mark activity for health tracking - message received
+   */
+  private markMessageActivity(): void {
+    this.lastMessageReceivedAt = Date.now();
+    this.updateStreamStatus({ lastMessageReceivedAt: this.lastMessageReceivedAt });
+
+    // Reset to healthy if we were reconnecting
+    const health = store.get(streamHealthAtom);
+    if (health === 'reconnecting') {
+      this.lastStableTime = Date.now();
+      const status = store.get(streamStatusAtom);
+      if (status.consecutiveFailures < 3) {
+        this.updateStreamHealth('healthy');
+      }
+    }
+  }
+
+  /**
+   * Handle stream error with smart recovery
+   */
+  private handleStreamError(
+    error: unknown,
+    streamType: 'conversations' | 'messages',
+    signal: AbortSignal
+  ): void {
+    if (signal.aborted) return;
+
+    // Check for database corruption
+    if (this.checkForDatabaseCorruption(error)) {
+      console.error(`[StreamManager] ${streamType} stream stopped due to database corruption`);
+      this.updateStreamHealth('offline');
+      return;
+    }
+
+    const errorStr = String(error);
+    const isTransient =
+      errorStr.includes('network') ||
+      errorStr.includes('fetch') ||
+      errorStr.includes('tonic') ||
+      errorStr.includes('timeout') ||
+      errorStr.includes('ECONNREFUSED') ||
+      errorStr.includes('ENOTFOUND');
+
+    console.log(`[StreamManager] Stream error (${streamType}): ${errorStr}, transient: ${isTransient}`);
+
+    // Update stream status
+    const restartCounter = streamType === 'conversations'
+      ? this.conversationStreamRestarts
+      : this.allMessagesStreamRestarts;
+
+    this.updateStreamStatus({
+      [streamType === 'conversations' ? 'conversationStream' : 'messagesStream']: 'restarting',
+    });
+
+    // Always retry transient errors (no max limit for transient)
+    // For non-transient errors, use the existing max restart limit
+    const shouldRetry = isTransient || restartCounter < MAX_STREAM_RESTARTS;
+
+    if (shouldRetry) {
+      if (streamType === 'conversations') {
+        this.conversationStreamRestarts++;
+      } else {
+        this.allMessagesStreamRestarts++;
+      }
+
+      const newCount = streamType === 'conversations'
+        ? this.conversationStreamRestarts
+        : this.allMessagesStreamRestarts;
+
+      const delay = this.getRestartDelay(newCount - 1);
+      console.log(`[StreamManager] Scheduling ${streamType} stream restart in ${Math.round(delay)}ms (attempt ${newCount})`);
+
+      // Update health status
+      if (newCount >= 3) {
+        this.updateStreamHealth('degraded');
+        this.updateStreamStatus({ consecutiveFailures: newCount });
+        this.startFallbackSync();
+      } else {
+        this.updateStreamHealth('reconnecting');
+        this.updateStreamStatus({ consecutiveFailures: newCount });
+      }
+
+      setTimeout(() => {
+        if (!signal.aborted && this.client && !this.databaseCorrupted) {
+          if (streamType === 'conversations') {
+            this.startConversationStream();
+          } else {
+            this.startAllMessagesStream();
+          }
+        }
+      }, delay);
+    } else {
+      console.error(`[StreamManager] ${streamType} stream gave up after max restarts`);
+      this.updateStreamHealth('offline');
+      this.updateStreamStatus({
+        [streamType === 'conversations' ? 'conversationStream' : 'messagesStream']: 'stopped',
+      });
+    }
+  }
+
+  /**
    * Cleanup all streams and state
    */
   cleanup(): void {
@@ -3489,6 +3838,33 @@ class XMTPStreamManager {
       clearInterval(this.historySyncInterval);
       this.historySyncInterval = null;
     }
+
+    // Clear health monitoring interval
+    if (this.healthCheckInterval) {
+      clearInterval(this.healthCheckInterval);
+      this.healthCheckInterval = null;
+    }
+
+    // Clear fallback sync interval
+    if (this.fallbackSyncInterval) {
+      clearInterval(this.fallbackSyncInterval);
+      this.fallbackSyncInterval = null;
+    }
+
+    // Reset health tracking state
+    this.lastMessageReceivedAt = null;
+    this.lastConversationReceivedAt = null;
+
+    // Reset stream health to healthy (for next initialization)
+    store.set(streamHealthAtom, 'healthy');
+    store.set(streamStatusAtom, {
+      conversationStream: 'stopped',
+      messagesStream: 'stopped',
+      lastMessageReceivedAt: null,
+      lastConversationReceivedAt: null,
+      consecutiveFailures: 0,
+      fallbackSyncActive: false,
+    });
   }
 
   /**
