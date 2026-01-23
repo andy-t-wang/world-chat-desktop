@@ -504,6 +504,7 @@ class XMTPStreamManager {
   private healthCheckInterval: ReturnType<typeof setInterval> | null = null;
   private lastStableTime: number = Date.now();
   private fallbackSyncInterval: ReturnType<typeof setInterval> | null = null;
+  private visibilityHandler: (() => void) | null = null;
 
   // Track when user last read each conversation (for unread counts)
   private lastReadTimestamps = new Map<string, bigint>();
@@ -3529,6 +3530,73 @@ class XMTPStreamManager {
     this.healthCheckInterval = setInterval(() => {
       this.checkStreamHealth();
     }, HEALTH_CHECK_INTERVAL_MS);
+
+    // Set up visibility change handler for background/foreground transitions
+    this.setupVisibilityHandler();
+  }
+
+  /**
+   * Handle app coming back from background
+   * Browsers may suspend WebSocket connections when backgrounded
+   */
+  private setupVisibilityHandler(): void {
+    if (typeof document === 'undefined') return;
+
+    // Remove existing handler if any
+    if (this.visibilityHandler) {
+      document.removeEventListener('visibilitychange', this.visibilityHandler);
+    }
+
+    this.visibilityHandler = () => {
+      if (document.visibilityState === 'visible' && this.client) {
+        console.log('[StreamManager] App returned to foreground, checking streams');
+
+        // Reset failure counter - background suspension is not a real failure
+        const status = store.get(streamStatusAtom);
+        if (status.consecutiveFailures > 0) {
+          console.log('[StreamManager] Resetting failure counter after foreground return');
+          this.updateStreamStatus({ consecutiveFailures: 0 });
+          this.updateStreamHealth('healthy');
+          this.stopFallbackSync();
+        }
+
+        // Proactively restart streams if they may have been suspended
+        // The streams will no-op if already running properly
+        this.conversationStreamController?.abort();
+        this.allMessagesStreamController?.abort();
+        this.startConversationStream();
+        this.startAllMessagesStream();
+
+        // Do a quick sync to catch up on any missed messages
+        this.performQuickSync();
+      }
+    };
+
+    document.addEventListener('visibilitychange', this.visibilityHandler);
+  }
+
+  /**
+   * Quick sync when returning from background to catch up on missed messages
+   */
+  private async performQuickSync(): Promise<void> {
+    if (!this.client || this.translationInProgress) return;
+
+    try {
+      console.log('[StreamManager] Performing quick sync after foreground return');
+      await this.client.conversations.sync();
+
+      // Sync the selected conversation if any
+      const selectedId = store.get(selectedConversationIdAtom);
+      if (selectedId) {
+        const conv = this.conversations.get(selectedId);
+        if (conv) {
+          await conv.sync();
+        }
+      }
+    } catch (error) {
+      console.error('[StreamManager] Quick sync error:', error);
+      // Don't count this as a failure - it's best effort
+    }
   }
 
   /**
@@ -3864,6 +3932,12 @@ class XMTPStreamManager {
     // Reset health tracking state
     this.lastMessageReceivedAt = null;
     this.lastConversationReceivedAt = null;
+
+    // Remove visibility handler
+    if (this.visibilityHandler && typeof document !== 'undefined') {
+      document.removeEventListener('visibilitychange', this.visibilityHandler);
+      this.visibilityHandler = null;
+    }
 
     // Reset stream health to healthy (for next initialization)
     store.set(streamHealthAtom, 'healthy');
