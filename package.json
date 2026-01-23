@@ -10,7 +10,10 @@
     "dev:webapp": "cd webapp && pnpm dev",
     "dev:electron": "wait-on http://localhost:3000 && tsc && electron .",
     "build": "cd webapp && pnpm build && cd .. && tsc",
-    "package": "pnpm build && electron-builder --mac",
+    "package": "pnpm build && electron-builder",
+    "package:mac": "pnpm build && electron-builder --mac",
+    "package:win": "pnpm build && electron-builder --win",
+    "package:linux": "pnpm build && electron-builder --linux",
     "postinstall": "cd webapp && pnpm install"
   },
   "devDependencies": {
@@ -59,8 +62,14 @@
       "category": "public.app-category.social-networking",
       "artifactName": "WorldChat-${version}-${arch}-mac.${ext}",
       "target": [
-        "dmg",
-        "zip"
+        {
+          "target": "dmg",
+          "arch": ["x64", "arm64"]
+        },
+        {
+          "target": "zip",
+          "arch": ["x64", "arm64"]
+        }
       ],
       "icon": "assets/icon.icns",
       "hardenedRuntime": true,
@@ -68,6 +77,31 @@
       "entitlements": "build/entitlements.mac.plist",
       "entitlementsInherit": "build/entitlements.mac.plist",
       "notarize": true
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ],
+      "artifactName": "WorldChat-${version}-${arch}-win.${ext}",
+      "icon": "assets/icon-1024.png"
+    },
+    "linux": {
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": ["x64"]
+        },
+        {
+          "target": "deb",
+          "arch": ["x64"]
+        }
+      ],
+      "artifactName": "WorldChat-${version}-${arch}-linux.${ext}",
+      "icon": "assets/icon-1024.png",
+      "category": "Network;Chat"
     },
     "extraMetadata": {
       "main": "dist/main.js"

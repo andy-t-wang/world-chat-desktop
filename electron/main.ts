@@ -533,7 +533,15 @@ const NODE_VERSION = 'v20.18.1';
 // Find bundled Node.js in app data directory
 function findBundledNode(): string | null {
   const appDataPath = app.getPath('userData');
-  const nodePath = path.join(appDataPath, 'node', 'bin', 'node');
+  const platform = os.platform();
+
+  // Windows uses node.exe, others use node
+  const nodeBinary = platform === 'win32' ? 'node.exe' : 'node';
+  // Windows has node.exe directly in the node folder, Unix has it in bin/
+  const nodePath = platform === 'win32'
+    ? path.join(appDataPath, 'node', nodeBinary)
+    : path.join(appDataPath, 'node', 'bin', nodeBinary);
+
   if (fs.existsSync(nodePath)) {
     console.log('[Translation] Found bundled Node.js at:', nodePath);
     return nodePath;
@@ -543,26 +551,54 @@ function findBundledNode(): string | null {
 
 // Find system Node.js as fallback (not Electron's)
 function findSystemNode(): string | null {
-  const possiblePaths = [
-    '/opt/homebrew/bin/node',  // macOS ARM Homebrew
-    '/usr/local/bin/node',     // macOS Intel Homebrew
-    '/usr/bin/node',           // Linux system
-  ];
+  const platform = os.platform();
 
-  // Try 'which node' first
-  try {
-    const nodePath = execSync('which node', { encoding: 'utf8' }).trim();
-    if (nodePath && !nodePath.includes('Electron')) {
-      return nodePath;
+  if (platform === 'win32') {
+    // Windows: Try 'where node' first
+    try {
+      const nodePath = execSync('where node', { encoding: 'utf8' }).trim().split('\n')[0];
+      if (nodePath && !nodePath.includes('Electron')) {
+        return nodePath;
+      }
+    } catch {
+      // Ignore
     }
-  } catch {
-    // Ignore
-  }
 
-  // Try common paths
-  for (const p of possiblePaths) {
-    if (fs.existsSync(p)) {
-      return p;
+    // Try common Windows paths
+    const windowsPaths = [
+      'C:\\Program Files\\nodejs\\node.exe',
+      'C:\\Program Files (x86)\\nodejs\\node.exe',
+      path.join(os.homedir(), 'AppData', 'Roaming', 'nvm', 'current', 'node.exe'),
+    ];
+    for (const p of windowsPaths) {
+      if (fs.existsSync(p)) {
+        return p;
+      }
+    }
+  } else {
+    // macOS / Linux
+    const possiblePaths = [
+      '/opt/homebrew/bin/node',  // macOS ARM Homebrew
+      '/usr/local/bin/node',     // macOS Intel Homebrew
+      '/usr/bin/node',           // Linux system
+      '/home/linuxbrew/.linuxbrew/bin/node', // Linux Homebrew
+    ];
+
+    // Try 'which node' first
+    try {
+      const nodePath = execSync('which node', { encoding: 'utf8' }).trim();
+      if (nodePath && !nodePath.includes('Electron')) {
+        return nodePath;
+      }
+    } catch {
+      // Ignore
+    }
+
+    // Try common paths
+    for (const p of possiblePaths) {
+      if (fs.existsSync(p)) {
+        return p;
+      }
     }
   }
 
@@ -578,33 +614,56 @@ function findNodeJs(): string | null {
 async function downloadNodeJs(onProgress?: (percent: number, status: string) => void): Promise<string> {
   const appDataPath = app.getPath('userData');
   const nodeDir = path.join(appDataPath, 'node');
-  const nodeBinPath = path.join(nodeDir, 'bin', 'node');
 
   // Determine platform and architecture
   const platform = os.platform();
   const arch = os.arch();
 
-  if (platform !== 'darwin') {
-    throw new Error('Node.js download only supported on macOS currently');
+  // Map to Node.js download naming conventions
+  let nodePlatform: string;
+  let nodeArch: string;
+  let archiveExt: string;
+  let nodeBinPath: string;
+
+  switch (platform) {
+    case 'darwin':
+      nodePlatform = 'darwin';
+      nodeArch = arch === 'arm64' ? 'arm64' : 'x64';
+      archiveExt = 'tar.gz';
+      nodeBinPath = path.join(nodeDir, 'bin', 'node');
+      break;
+    case 'win32':
+      nodePlatform = 'win';
+      nodeArch = arch === 'arm64' ? 'arm64' : 'x64';
+      archiveExt = 'zip';
+      nodeBinPath = path.join(nodeDir, 'node.exe');
+      break;
+    case 'linux':
+      nodePlatform = 'linux';
+      nodeArch = arch === 'arm64' ? 'arm64' : 'x64';
+      archiveExt = 'tar.xz';
+      nodeBinPath = path.join(nodeDir, 'bin', 'node');
+      break;
+    default:
+      throw new Error(`Unsupported platform: ${platform}`);
   }
 
-  const nodeArch = arch === 'arm64' ? 'arm64' : 'x64';
-  const tarballName = `node-${NODE_VERSION}-darwin-${nodeArch}.tar.gz`;
-  const downloadUrl = `https://nodejs.org/dist/${NODE_VERSION}/${tarballName}`;
+  const archiveName = `node-${NODE_VERSION}-${nodePlatform}-${nodeArch}.${archiveExt}`;
+  const downloadUrl = `https://nodejs.org/dist/${NODE_VERSION}/${archiveName}`;
 
   console.log('[Translation] Downloading Node.js from:', downloadUrl);
   onProgress?.(0, 'Downloading Node.js runtime...');
 
   // Create temp directory for download
   const tempDir = path.join(appDataPath, 'temp');
-  const tempFile = path.join(tempDir, tarballName);
+  const tempFile = path.join(tempDir, archiveName);
 
   try {
     // Ensure directories exist
     fs.mkdirSync(tempDir, { recursive: true });
     fs.mkdirSync(nodeDir, { recursive: true });
 
-    // Download the tarball
+    // Download the archive
     await new Promise<void>((resolve, reject) => {
       const file = fs.createWriteStream(tempFile);
 
@@ -669,14 +728,26 @@ async function downloadNodeJs(onProgress?: (percent: number, status: string) => 
     console.log('[Translation] Download complete, extracting...');
     onProgress?.(100, 'Extracting Node.js...');
 
-    // Extract the tarball using system tar (works on macOS)
     // Extract to temp first, then move contents
     const extractDir = path.join(tempDir, 'node-extract');
     fs.mkdirSync(extractDir, { recursive: true });
 
-    execSync(`tar -xzf "${tempFile}" -C "${extractDir}"`, { encoding: 'utf8' });
+    // Extract based on archive type
+    if (platform === 'win32') {
+      // Windows: Use PowerShell to extract zip
+      execSync(
+        `powershell -Command "Expand-Archive -Path '${tempFile}' -DestinationPath '${extractDir}' -Force"`,
+        { encoding: 'utf8' }
+      );
+    } else if (platform === 'linux') {
+      // Linux: Use tar for .tar.xz
+      execSync(`tar -xJf "${tempFile}" -C "${extractDir}"`, { encoding: 'utf8' });
+    } else {
+      // macOS: Use tar for .tar.gz
+      execSync(`tar -xzf "${tempFile}" -C "${extractDir}"`, { encoding: 'utf8' });
+    }
 
-    // Find the extracted directory (node-v20.x.x-darwin-arm64)
+    // Find the extracted directory (node-v20.x.x-<platform>-<arch>)
     const extractedDirs = fs.readdirSync(extractDir);
     const nodeExtractedDir = extractedDirs.find(d => d.startsWith('node-'));
 
@@ -698,8 +769,10 @@ async function downloadNodeJs(onProgress?: (percent: number, status: string) => 
     // Clean up
     fs.rmSync(tempDir, { recursive: true });
 
-    // Make node binary executable
-    fs.chmodSync(nodeBinPath, 0o755);
+    // Make node binary executable (not needed on Windows)
+    if (platform !== 'win32') {
+      fs.chmodSync(nodeBinPath, 0o755);
+    }
 
     console.log('[Translation] Node.js installed at:', nodeBinPath);
     return nodeBinPath;
@@ -888,14 +961,20 @@ function stopTranslationProcess(): void {
 // ============================================================================
 
 async function createWindow() {
+  // Platform-specific window options
+  const isMac = process.platform === 'darwin';
+
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
     minWidth: 800,
     minHeight: 600,
     center: true, // Center window on screen like Signal
-    titleBarStyle: 'hiddenInset',
-    trafficLightPosition: { x: 16, y: 16 },
+    // macOS-specific title bar styling
+    ...(isMac && {
+      titleBarStyle: 'hiddenInset',
+      trafficLightPosition: { x: 16, y: 16 },
+    }),
     backgroundColor: '#ffffff',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),

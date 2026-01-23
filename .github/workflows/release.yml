@@ -10,7 +10,28 @@ permissions:
 
 jobs:
   build:
-    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # macOS ARM64 (Apple Silicon)
+          - os: macos-latest
+            platform: mac
+            arch: arm64
+          # macOS x64 (Intel)
+          - os: macos-13
+            platform: mac
+            arch: x64
+          # Windows x64
+          - os: windows-latest
+            platform: win
+            arch: x64
+          # Linux x64
+          - os: ubuntu-latest
+            platform: linux
+            arch: x64
+
+    runs-on: ${{ matrix.os }}
 
     steps:
       - name: Checkout
@@ -40,8 +61,10 @@ jobs:
       - name: Build Electron
         run: pnpm build
 
-      - name: Package and publish to R2
-        run: pnpm exec electron-builder --mac --publish always
+      # macOS: Build with signing and notarization
+      - name: Package macOS (signed)
+        if: matrix.platform == 'mac'
+        run: pnpm exec electron-builder --mac --${{ matrix.arch }} --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_LINK: ${{ secrets.CSC_LINK }}
@@ -52,14 +75,49 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
 
+      # Windows: Build without signing (add signing later with CSC_LINK for Windows)
+      - name: Package Windows
+        if: matrix.platform == 'win'
+        run: pnpm exec electron-builder --win --${{ matrix.arch }} --publish always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+
+      # Linux: Build (no signing required)
+      - name: Package Linux
+        if: matrix.platform == 'linux'
+        run: pnpm exec electron-builder --linux --${{ matrix.arch }} --publish always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: release
+          name: release-${{ matrix.platform }}-${{ matrix.arch }}
           path: |
             release/*.dmg
             release/*.zip
+            release/*.exe
+            release/*.AppImage
+            release/*.deb
             release/*.yml
+
+  # Create GitHub Release after all builds complete
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release
+          merge-multiple: true
+
+      - name: List artifacts
+        run: ls -la release/
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
@@ -67,6 +125,9 @@ jobs:
           files: |
             release/*.dmg
             release/*.zip
+            release/*.exe
+            release/*.AppImage
+            release/*.deb
           draft: false
           prerelease: false
         env:
