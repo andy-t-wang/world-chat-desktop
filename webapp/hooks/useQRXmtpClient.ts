@@ -2,17 +2,22 @@
 
 import { useCallback, useRef } from "react";
 import { useSetAtom, useAtom } from "jotai";
-import type { Client } from "@xmtp/browser-sdk";
+import type { Client, Signer } from "@xmtp/browser-sdk";
 import { clientLifecycleAtom, clientStateAtom } from "@/stores/client";
 import { streamManager } from "@/lib/xmtp/StreamManager";
-import { RemoteSigner } from "@/lib/signing-relay";
 import { clearSession } from "@/lib/auth/session";
 import {
   isLockedByAnotherTab,
   acquireTabLock,
   releaseTabLock,
 } from "@/lib/tab-lock";
-import { getSessionCache, setSessionCache, isElectron, deleteXmtpDatabase, deleteAllXmtpDatabases } from "@/lib/storage";
+import {
+  getSessionCache,
+  setSessionCache,
+  isElectron,
+  deleteXmtpDatabase,
+  deleteAllXmtpDatabases,
+} from "@/lib/storage";
 
 // Module cache for faster subsequent loads
 let cachedModules: Awaited<ReturnType<typeof loadAllModules>> | null = null;
@@ -26,14 +31,19 @@ let moduleLoadPromise: Promise<
 async function loadAllModules() {
   // v6 has built-in send methods (sendText, sendReaction, sendReply, sendReadReceipt)
   // so we only need codecs for custom types and attachments
-  const [xmtpModule, remoteAttachmentModule, transactionRefModule, paymentReqModule, paymentFulfillModule] =
-    await Promise.all([
-      import("@xmtp/browser-sdk"),
-      import("@xmtp/content-type-remote-attachment"),
-      import("@/lib/xmtp/TransactionReferenceCodec"),
-      import("@/lib/xmtp/PaymentRequestCodec"),
-      import("@/lib/xmtp/PaymentFulfillmentCodec"),
-    ]);
+  const [
+    xmtpModule,
+    remoteAttachmentModule,
+    transactionRefModule,
+    paymentReqModule,
+    paymentFulfillModule,
+  ] = await Promise.all([
+    import("@xmtp/browser-sdk"),
+    import("@xmtp/content-type-remote-attachment"),
+    import("@/lib/xmtp/TransactionReferenceCodec"),
+    import("@/lib/xmtp/PaymentRequestCodec"),
+    import("@/lib/xmtp/PaymentFulfillmentCodec"),
+  ]);
 
   return {
     Client: xmtpModule.Client,
@@ -87,9 +97,7 @@ interface UseQRXmtpClientResult {
   isInitializing: boolean;
   isReady: boolean;
   error: Error | null;
-  initializeWithRemoteSigner: (
-    signer: ReturnType<RemoteSigner["getSigner"]>
-  ) => Promise<void>;
+  initializeWithRemoteSigner: (signer: Signer) => Promise<void>;
   restoreSession: () => Promise<boolean>;
 }
 
@@ -118,14 +126,14 @@ export function useQRXmtpClient(): UseQRXmtpClientResult {
 
     // Check if we need to clear the database (set by logout fallback)
     // This must happen BEFORE any XMTP client operations
-    const pendingClear = localStorage.getItem('xmtp-pending-db-clear');
-    if (pendingClear === 'true') {
+    const pendingClear = localStorage.getItem("xmtp-pending-db-clear");
+    if (pendingClear === "true") {
       try {
         await deleteAllXmtpDatabases();
       } catch {
         // Ignore errors
       }
-      localStorage.removeItem('xmtp-pending-db-clear');
+      localStorage.removeItem("xmtp-pending-db-clear");
       return false;
     }
 
@@ -179,28 +187,43 @@ export function useQRXmtpClient(): UseQRXmtpClientResult {
             new PaymentRequestCodec(),
             new PaymentFulfillmentCodec(),
           ],
-        }
+        },
       );
 
       // Verify identity is registered before proceeding
       try {
         await xmtpClient.preferences.sync();
       } catch (verifyError) {
-        const verifyMsg = verifyError instanceof Error ? verifyError.message : String(verifyError);
+        const verifyMsg =
+          verifyError instanceof Error
+            ? verifyError.message
+            : String(verifyError);
 
         // Check for database lock conflict
-        if (verifyMsg.includes('Access Handle') || verifyMsg.includes('SyncAccessHandle') || verifyMsg.includes('createSyncAccessHandle')) {
+        if (
+          verifyMsg.includes("Access Handle") ||
+          verifyMsg.includes("SyncAccessHandle") ||
+          verifyMsg.includes("createSyncAccessHandle")
+        ) {
           releaseTabLock();
           throw new Error("TAB_LOCKED");
         }
 
-        if (verifyMsg.includes('Uninitialized identity') || verifyMsg.includes('register_identity')) {
+        if (
+          verifyMsg.includes("Uninitialized identity") ||
+          verifyMsg.includes("register_identity")
+        ) {
           releaseTabLock();
           if (cachedSession.inboxId) {
             await deleteXmtpDatabase(cachedSession.inboxId);
           }
           clearSession();
-          dispatch({ type: "INIT_ERROR", error: new Error("Identity registration incomplete. Please login again.") });
+          dispatch({
+            type: "INIT_ERROR",
+            error: new Error(
+              "Identity registration incomplete. Please login again.",
+            ),
+          });
           return false;
         }
         // Other errors might be transient, continue
@@ -227,7 +250,11 @@ export function useQRXmtpClient(): UseQRXmtpClientResult {
       }
 
       // Detect OPFS database lock conflict
-      if (errorMessage.includes('Access Handle') || errorMessage.includes('SyncAccessHandle') || errorMessage.includes('createSyncAccessHandle')) {
+      if (
+        errorMessage.includes("Access Handle") ||
+        errorMessage.includes("SyncAccessHandle") ||
+        errorMessage.includes("createSyncAccessHandle")
+      ) {
         throw new Error("TAB_LOCKED");
       }
 
@@ -255,8 +282,16 @@ export function useQRXmtpClient(): UseQRXmtpClientResult {
   }, [client, dispatch]);
 
   const initializeWithRemoteSigner = useCallback(
-    async (signer: ReturnType<RemoteSigner["getSigner"]>) => {
+    async (signer: Signer) => {
+      // Prevent double initialization
       if (initializingRef.current) {
+        console.log("[useQRXmtpClient] Already initializing, skipping");
+        return;
+      }
+
+      // If client already exists, skip initialization
+      if (client) {
+        console.log("[useQRXmtpClient] Client already exists, skipping");
         return;
       }
 
@@ -273,7 +308,8 @@ export function useQRXmtpClient(): UseQRXmtpClientResult {
       initializingRef.current = true;
       dispatch({ type: "INIT_START" });
 
-      const address = signer.getIdentifier().identifier;
+      const identifier = await Promise.resolve(signer.getIdentifier());
+      const address = identifier.identifier;
 
       try {
         const existingSession = await getSessionCache();
@@ -316,7 +352,7 @@ export function useQRXmtpClient(): UseQRXmtpClientResult {
               identifier: address.toLowerCase(),
               identifierKind: IdentifierKind.Ethereum,
             },
-            clientOptions
+            clientOptions,
           );
         } else {
           // Fresh login
@@ -327,20 +363,35 @@ export function useQRXmtpClient(): UseQRXmtpClientResult {
         try {
           await xmtpClient.preferences.sync();
         } catch (verifyError) {
-          const verifyMsg = verifyError instanceof Error ? verifyError.message : String(verifyError);
+          const verifyMsg =
+            verifyError instanceof Error
+              ? verifyError.message
+              : String(verifyError);
 
-          if (verifyMsg.includes('Access Handle') || verifyMsg.includes('SyncAccessHandle') || verifyMsg.includes('createSyncAccessHandle')) {
+          if (
+            verifyMsg.includes("Access Handle") ||
+            verifyMsg.includes("SyncAccessHandle") ||
+            verifyMsg.includes("createSyncAccessHandle")
+          ) {
             releaseTabLock();
             throw new Error("TAB_LOCKED");
           }
 
-          if (verifyMsg.includes('Uninitialized identity') || verifyMsg.includes('register_identity')) {
+          if (
+            verifyMsg.includes("Uninitialized identity") ||
+            verifyMsg.includes("register_identity")
+          ) {
             if (xmtpClient.inboxId) {
               await deleteXmtpDatabase(xmtpClient.inboxId);
             }
             releaseTabLock();
             clearSession();
-            dispatch({ type: "INIT_ERROR", error: new Error("Identity registration failed. Please try again.") });
+            dispatch({
+              type: "INIT_ERROR",
+              error: new Error(
+                "Identity registration failed. Please try again.",
+              ),
+            });
             throw new Error("Identity registration incomplete");
           }
           // Other errors might be transient, continue
@@ -368,7 +419,7 @@ export function useQRXmtpClient(): UseQRXmtpClientResult {
         initializingRef.current = false;
       }
     },
-    [dispatch]
+    [client, dispatch],
   );
 
   return {

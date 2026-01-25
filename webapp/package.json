@@ -12,10 +12,11 @@
   "dependencies": {
     "@emoji-mart/data": "^1.2.1",
     "@emoji-mart/react": "^1.1.1",
+    "@privy-io/react-auth": "3.12.0",
     "@supabase/supabase-js": "^2.89.0",
     "@tanstack/react-virtual": "^3.13.14",
     "@worldcoin/minikit-js": "^1.9.9",
-    "@xmtp/browser-sdk": "^6.1.0",
+    "@xmtp/browser-sdk": "^6.1.2",
     "@xmtp/content-type-primitives": "^2.0.3",
     "@xmtp/content-type-reaction": "^2.0.2",
     "@xmtp/content-type-read-receipt": "^2.0.2",

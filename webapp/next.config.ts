@@ -1,5 +1,21 @@
 import type { NextConfig } from "next";
 
+const isDev = process.env.NODE_ENV !== "production";
+const contentSecurityPolicy = [
+  "default-src 'self'",
+  "base-uri 'self'",
+  "object-src 'none'",
+  "frame-ancestors 'self'",
+  `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ""}`,
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data: blob: https:",
+  "font-src 'self' data: https:",
+  `connect-src 'self' https: wss:${isDev ? " http: ws:" : ""}`,
+  "media-src 'self' blob: https:",
+  "worker-src 'self' blob:",
+  "frame-src 'self' https:",
+].join("; ");
+
 const nextConfig: NextConfig = {
   // Allow ngrok domain for dev mode HMR (prevents reload issues when /sign page loads via ngrok)
   allowedDevOrigins: [
@@ -55,19 +71,26 @@ const nextConfig: NextConfig = {
   },
 
   // Required headers for XMTP SDK (SharedArrayBuffer support)
+  // Note: COOP/COEP disabled for Privy compatibility - XMTP works without SharedArrayBuffer (slower but functional)
   async headers() {
     return [
       {
         source: '/:path*',
         headers: [
           {
-            key: 'Cross-Origin-Opener-Policy',
-            value: 'same-origin',
+            key: 'Content-Security-Policy',
+            value: contentSecurityPolicy,
           },
-          {
-            key: 'Cross-Origin-Embedder-Policy',
-            value: 'credentialless',
-          },
+          // COOP/COEP commented out for Privy embedded wallet compatibility
+          // XMTP will fall back to non-SharedArrayBuffer mode
+          // {
+          //   key: 'Cross-Origin-Opener-Policy',
+          //   value: 'same-origin-allow-popups',
+          // },
+          // {
+          //   key: 'Cross-Origin-Embedder-Policy',
+          //   value: 'credentialless',
+          // },
         ],
       },
     ];

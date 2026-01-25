@@ -169,29 +169,82 @@ export async function deleteXmtpDatabase(inboxId: string): Promise<boolean> {
   }
 }
 
+export interface DatabaseDeletionResult {
+  success: boolean;
+  deletedFiles: string[];
+  failedFiles: string[];
+  error?: string;
+}
+
 /**
  * Delete ALL XMTP databases in OPFS
  * Use during logout to ensure clean state and allow recovery from corruption
+ * Returns detailed result so caller can decide how to handle failures
  */
-export async function deleteAllXmtpDatabases(): Promise<void> {
-  if (typeof window === 'undefined') return;
+export async function deleteAllXmtpDatabases(): Promise<DatabaseDeletionResult> {
+  if (typeof window === 'undefined') {
+    return { success: true, deletedFiles: [], failedFiles: [] };
+  }
+
+  const deletedFiles: string[] = [];
+  const failedFiles: string[] = [];
 
   try {
     const root = await navigator.storage.getDirectory();
+    const filesToDelete: string[] = [];
 
+    // First, collect all files to delete
     // @ts-ignore - entries() exists on FileSystemDirectoryHandle
     for await (const [name] of root.entries()) {
-      // Delete ALL xmtp-related files (db3, wal, shm, and any other associated files)
       if (name.startsWith('xmtp-') || name.includes('xmtp')) {
-        try {
-          await root.removeEntry(name, { recursive: true });
-        } catch {
-          // Ignore individual file deletion errors
-        }
+        filesToDelete.push(name);
       }
     }
-  } catch {
-    // Ignore errors - best effort deletion
+
+    console.log('[Storage] Found XMTP files to delete:', filesToDelete);
+
+    // Delete each file
+    for (const name of filesToDelete) {
+      try {
+        await root.removeEntry(name, { recursive: true });
+        deletedFiles.push(name);
+        console.log('[Storage] Deleted:', name);
+      } catch (error) {
+        failedFiles.push(name);
+        console.error('[Storage] Failed to delete:', name, error);
+      }
+    }
+
+    // Verify deletion by checking if files still exist
+    const remainingFiles: string[] = [];
+    // @ts-ignore
+    for await (const [name] of root.entries()) {
+      if (name.startsWith('xmtp-') || name.includes('xmtp')) {
+        remainingFiles.push(name);
+      }
+    }
+
+    if (remainingFiles.length > 0) {
+      console.error('[Storage] Files still exist after deletion:', remainingFiles);
+      return {
+        success: false,
+        deletedFiles,
+        failedFiles: remainingFiles,
+        error: `Failed to delete ${remainingFiles.length} file(s): ${remainingFiles.join(', ')}`,
+      };
+    }
+
+    console.log('[Storage] All XMTP files deleted successfully');
+    return { success: true, deletedFiles, failedFiles: [] };
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    console.error('[Storage] OPFS access error:', errorMsg);
+    return {
+      success: false,
+      deletedFiles,
+      failedFiles,
+      error: `OPFS access failed: ${errorMsg}`,
+    };
   }
 }
 

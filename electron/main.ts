@@ -11,6 +11,7 @@ const STORAGE_FILE = path.join(app.getPath('userData'), 'secure-storage.enc');
 const DEBUG_LOG_FILE = path.join(app.getPath('userData'), 'debug.log');
 const DEV_SERVER_URL = 'http://localhost:3000';
 const PRODUCTION_URL = 'https://world-chat-web.vercel.app';
+const ALTERNATE_PRODUCTION_URL = 'https://chat.world.app';
 
 // Debug logging - persists to file for debugging across restarts
 function debugLog(source: string, message: string, data?: unknown): void {
@@ -1010,7 +1011,11 @@ async function createWindow() {
   // Handle external links
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     // Allow internal navigation (both dev and production URLs)
-    if (url.startsWith(DEV_SERVER_URL) || url.startsWith(PRODUCTION_URL)) {
+    if (
+      url.startsWith(DEV_SERVER_URL) ||
+      url.startsWith(PRODUCTION_URL) ||
+      url.startsWith(ALTERNATE_PRODUCTION_URL)
+    ) {
       return { action: 'allow' };
     }
     // Open external links in default browser

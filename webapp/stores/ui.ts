@@ -195,6 +195,8 @@ export const streamHealthAtom = atom<StreamHealthStatus>('healthy');
 export interface StreamStatus {
   conversationStream: 'running' | 'stopped' | 'restarting';
   messagesStream: 'running' | 'stopped' | 'restarting';
+  conversationHealthy: boolean;  // Per-stream health tracking
+  messagesHealthy: boolean;      // Per-stream health tracking
   lastMessageReceivedAt: number | null;
   lastConversationReceivedAt: number | null;
   consecutiveFailures: number;
@@ -204,6 +206,8 @@ export interface StreamStatus {
 export const streamStatusAtom = atom<StreamStatus>({
   conversationStream: 'stopped',
   messagesStream: 'stopped',
+  conversationHealthy: true,
+  messagesHealthy: true,
   lastMessageReceivedAt: null,
   lastConversationReceivedAt: null,
   consecutiveFailures: 0,

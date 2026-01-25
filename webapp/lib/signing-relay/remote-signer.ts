@@ -7,12 +7,12 @@
  * - Timestamped requests to prevent replay (SEC-004)
  */
 
-import type { RealtimeChannel } from '@supabase/supabase-js';
-import { toBytes } from 'viem';
-import { IdentifierKind } from '@xmtp/browser-sdk';
-import { supabase, getChannelName } from './client';
-import type { RelayMessage, PendingSignRequest } from './types';
-import { SIGN_TIMEOUT_MS, AUTH_TIMEOUT_MS } from './types';
+import type { RealtimeChannel } from "@supabase/supabase-js";
+import { toBytes } from "viem";
+import { IdentifierKind } from "@xmtp/browser-sdk";
+import { supabase, getChannelName } from "./client";
+import type { RelayMessage, PendingSignRequest } from "./types";
+import { SIGN_TIMEOUT_MS, AUTH_TIMEOUT_MS } from "./types";
 
 export interface RemoteSignerCallbacks {
   onMobileConnected?: (address: string) => void;
@@ -37,7 +37,7 @@ export class RemoteSigner {
 
   constructor(
     private sessionId: string,
-    callbacks: RemoteSignerCallbacks = {}
+    callbacks: RemoteSignerCallbacks = {},
   ) {
     this.callbacks = callbacks;
   }
@@ -63,14 +63,14 @@ export class RemoteSigner {
       });
 
       // Listen for messages from mobile
-      this.channel.on('broadcast', { event: 'relay' }, ({ payload }) => {
+      this.channel.on("broadcast", { event: "relay" }, ({ payload }) => {
         this.handleMessage(payload as RelayMessage);
       });
 
       // Set up connection timeout (10 minutes to scan QR and complete auth)
       const timeout = setTimeout(() => {
         this.cleanup();
-        reject(new Error('Timeout waiting for mobile to connect'));
+        reject(new Error("Timeout waiting for mobile to connect"));
       }, 600000);
 
       // Store resolve/reject for when auth completes
@@ -90,9 +90,9 @@ export class RemoteSigner {
 
       // Subscribe to channel
       this.channel.subscribe((status) => {
-        if (status === 'CHANNEL_ERROR') {
+        if (status === "CHANNEL_ERROR") {
           clearTimeout(timeout);
-          reject(new Error('Failed to connect to signing channel'));
+          reject(new Error("Failed to connect to signing channel"));
         }
       });
     });
@@ -103,18 +103,20 @@ export class RemoteSigner {
    */
   private async handleMessage(message: RelayMessage): Promise<void> {
     switch (message.type) {
-      case 'mobile_connected':
+      case "mobile_connected":
         // Don't trust the address yet - start authentication
         await this.startAuthentication(message.address);
         break;
 
-      case 'auth_response':
+      case "auth_response":
         await this.verifyAuthResponse(message.signature);
         break;
 
-      case 'sign_response': {
+      case "sign_response": {
         if (!this.isAuthenticated) {
-          console.warn('[RemoteSigner] Ignoring sign_response - not authenticated');
+          console.warn(
+            "[RemoteSigner] Ignoring sign_response - not authenticated",
+          );
           return;
         }
         const pending = this.pendingRequests.get(message.requestId);
@@ -126,9 +128,11 @@ export class RemoteSigner {
         break;
       }
 
-      case 'sign_error': {
+      case "sign_error": {
         if (!this.isAuthenticated) {
-          console.warn('[RemoteSigner] Ignoring sign_error - not authenticated');
+          console.warn(
+            "[RemoteSigner] Ignoring sign_error - not authenticated",
+          );
           return;
         }
         const pending = this.pendingRequests.get(message.requestId);
@@ -156,8 +160,11 @@ export class RemoteSigner {
     // Set up auth timeout
     const timeout = setTimeout(() => {
       this.authChallenge = null;
-      this.sendMessage({ type: 'auth_failed', error: 'Authentication timeout' });
-      this.callbacks.onError?.(new Error('Authentication timeout'));
+      this.sendMessage({
+        type: "auth_failed",
+        error: "Authentication timeout",
+      });
+      this.callbacks.onError?.(new Error("Authentication timeout"));
     }, AUTH_TIMEOUT_MS);
 
     // Store the claimed address temporarily for verification
@@ -177,7 +184,7 @@ export class RemoteSigner {
 
     // Send challenge to mobile
     this.sendMessage({
-      type: 'auth_challenge',
+      type: "auth_challenge",
       challenge: this.authChallenge,
     });
 
@@ -200,31 +207,36 @@ export class RemoteSigner {
    */
   private async verifyAuthResponse(signature: string): Promise<void> {
     if (!this.authChallenge || !this.mobileAddress) {
-      this.sendMessage({ type: 'auth_failed', error: 'No pending authentication' });
-      this.callbacks.onError?.(new Error('No pending authentication'));
+      this.sendMessage({
+        type: "auth_failed",
+        error: "No pending authentication",
+      });
+      this.callbacks.onError?.(new Error("No pending authentication"));
       return;
     }
 
     try {
       // For Smart Contract Wallets, we trust the address from World App's wallet auth
       // and just verify a valid signature was provided
-      if (!signature || !signature.startsWith('0x') || signature.length < 10) {
-        throw new Error('Invalid signature format');
+      if (!signature || !signature.startsWith("0x") || signature.length < 10) {
+        throw new Error("Invalid signature format");
       }
 
       // Authentication successful!
       // The address was already verified by World App's walletAuth
       this.isAuthenticated = true;
       this.authChallenge = null;
-      this.sendMessage({ type: 'auth_success' });
+      this.sendMessage({ type: "auth_success" });
       this.authResolve?.(this.mobileAddress);
       this.callbacks.onAuthenticated?.(this.mobileAddress);
     } catch (error) {
       this.authChallenge = null;
       this.mobileAddress = null;
-      this.sendMessage({ type: 'auth_failed', error: 'Invalid signature' });
-      this.authReject?.(error instanceof Error ? error : new Error('Invalid signature'));
-      this.callbacks.onError?.(new Error('Invalid signature format'));
+      this.sendMessage({ type: "auth_failed", error: "Invalid signature" });
+      this.authReject?.(
+        error instanceof Error ? error : new Error("Invalid signature"),
+      );
+      this.callbacks.onError?.(new Error("Invalid signature format"));
     }
   }
 
@@ -234,8 +246,8 @@ export class RemoteSigner {
   private sendMessage(message: RelayMessage): void {
     if (this.channel) {
       this.channel.send({
-        type: 'broadcast',
-        event: 'relay',
+        type: "broadcast",
+        event: "relay",
         payload: message,
       });
     }
@@ -246,11 +258,11 @@ export class RemoteSigner {
    */
   private async requestSignature(message: string): Promise<string> {
     if (!this.channel) {
-      throw new Error('Not connected to signing channel');
+      throw new Error("Not connected to signing channel");
     }
 
     if (!this.isAuthenticated) {
-      throw new Error('Mobile not authenticated');
+      throw new Error("Mobile not authenticated");
     }
 
     const requestId = crypto.randomUUID();
@@ -260,7 +272,7 @@ export class RemoteSigner {
       // Set up timeout
       const timeout = setTimeout(() => {
         this.pendingRequests.delete(requestId);
-        reject(new Error('Signing request timed out'));
+        reject(new Error("Signing request timed out"));
       }, SIGN_TIMEOUT_MS);
 
       // Store pending request
@@ -281,7 +293,7 @@ export class RemoteSigner {
       // Send request to mobile with timestamp
       this.callbacks.onSigningRequest?.();
       this.sendMessage({
-        type: 'sign_request',
+        type: "sign_request",
         requestId,
         message,
         timestamp,
@@ -294,17 +306,17 @@ export class RemoteSigner {
    */
   getSigner() {
     if (!this.mobileAddress) {
-      throw new Error('Mobile not connected yet');
+      throw new Error("Mobile not connected yet");
     }
 
     if (!this.isAuthenticated) {
-      throw new Error('Mobile not authenticated yet');
+      throw new Error("Mobile not authenticated yet");
     }
 
     const address = this.mobileAddress;
 
     return {
-      type: 'SCW' as const, // Smart Contract Wallet (Safe)
+      type: "SCW" as const, // Smart Contract Wallet (Safe)
       getIdentifier: () => ({
         identifier: address.toLowerCase(),
         identifierKind: IdentifierKind.Ethereum,
@@ -337,7 +349,7 @@ export class RemoteSigner {
    */
   async complete(): Promise<void> {
     if (this.channel) {
-      this.sendMessage({ type: 'session_complete' });
+      this.sendMessage({ type: "session_complete" });
     }
   }
 

@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useAtom } from "jotai";
+import { usePrivy, useWallets } from "@privy-io/react-auth";
 import {
   ArrowLeft,
   Sun,
@@ -26,6 +27,8 @@ import {
   Trash2,
   Download,
   RotateCcw,
+  Copy,
+  Wallet,
 } from "lucide-react";
 import { useTranslation } from "@/hooks/useTranslation";
 import {
@@ -41,6 +44,7 @@ import { clearSession } from "@/lib/auth/session";
 import {
   clearSessionCache,
   deleteAllXmtpDatabases,
+  type DatabaseDeletionResult,
 } from "@/lib/storage";
 
 interface SettingsPanelProps {
@@ -73,8 +77,15 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
   const [themePreference, setThemePreference] = useAtom(themePreferenceAtom);
   const [messageRequestNotifications, setMessageRequestNotifications] = useAtom(messageRequestNotificationsAtom);
 
+  // Privy wallet info
+  const { authenticated } = usePrivy();
+  const { wallets } = useWallets();
+  const embeddedWallet = wallets.find((w) => w.walletClientType === "privy");
+  const [addressCopied, setAddressCopied] = useState(false);
+
   const [version, setVersion] = useState<string | null>(null);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [deletionError, setDeletionError] = useState<string | null>(null);
   const [isElectronEnv, setIsElectronEnv] = useState(false);
   const [linkCopied, setLinkCopied] = useState(false);
   const [translationAvailable, setTranslationAvailable] = useState(false);
@@ -91,6 +102,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [clearLocalData, setClearLocalData] = useState(false);
+  const isTranslationDownloading = translationProgress?.status === "downloading" || translationProgress?.status === "download";
 
   // Download link
   const BASE_URL = process.env.NEXT_PUBLIC_URL || "https://world-chat-web.vercel.app";
@@ -161,6 +173,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
   const handleLogout = async (shouldClearLocalData: boolean) => {
     if (isLoggingOut) return;
     setIsLoggingOut(true);
+    setDeletionError(null);
 
     try {
       streamManager.cleanup();
@@ -170,19 +183,34 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
       // If user opted to clear local data, delete XMTP databases
       // This helps recover from database corruption
       if (shouldClearLocalData) {
-        try {
-          await deleteAllXmtpDatabases();
-        } catch {
-          // If deletion fails, set flag for next startup
-          localStorage.setItem('xmtp-pending-db-clear', 'true');
+        const result = await deleteAllXmtpDatabases();
+
+        if (!result.success) {
+          // Deletion failed - block logout and show error
+          console.error("Database deletion failed:", result);
+          setDeletionError(
+            result.error ||
+              `Failed to delete database files. ${result.failedFiles.length} file(s) could not be removed.`
+          );
+          setIsLoggingOut(false);
+          return; // Don't proceed with logout
         }
       }
 
       window.location.href = "/";
     } catch (error) {
       console.error("Logout failed:", error);
+      setDeletionError(
+        error instanceof Error ? error.message : "Logout failed unexpectedly"
+      );
       setIsLoggingOut(false);
     }
+  };
+
+  const handleForceLogout = () => {
+    // Force logout without clearing data
+    setDeletionError(null);
+    window.location.href = "/";
   };
 
   const handleUpdateAction = async () => {
@@ -241,6 +269,17 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
       setTimeout(() => setLinkCopied(false), 2000);
     } catch (error) {
       console.error("Failed to copy link:", error);
+    }
+  };
+
+  const handleCopyAddress = async () => {
+    if (!embeddedWallet?.address) return;
+    try {
+      await navigator.clipboard.writeText(embeddedWallet.address);
+      setAddressCopied(true);
+      setTimeout(() => setAddressCopied(false), 2000);
+    } catch (error) {
+      console.error("Failed to copy address:", error);
     }
   };
 
@@ -425,15 +464,19 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
                     <p className="text-[14px] text-[var(--text-primary)]">Private Translations</p>
                     <p className="text-[12px] text-[var(--text-secondary)]">
                       {isInitializing
-                        ? translationProgress?.timeEstimate || "Downloading..."
+                        ? translationProgress?.status === "waiting"
+                          ? translationProgress?.timeEstimate || "Waiting for sync..."
+                          : isTranslationDownloading
+                          ? translationProgress?.timeEstimate || "Downloading models..."
+                          : "Initializing models..."
                         : isDeletingModels
                         ? "Removing..."
                         : isInitialized
                         ? "Local"
                         : "On-device"}
                     </p>
-                    {/* Progress bar with percent */}
-                    {isInitializing && (
+                    {/* Progress bar with percent (downloads only) */}
+                    {isInitializing && isTranslationDownloading && (
                       <div className="mt-2 flex items-center gap-2">
                         <div className="flex-1 bg-[var(--bg-tertiary)] rounded-full h-1.5 overflow-hidden">
                           <div
@@ -604,6 +647,32 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
             </p>
           </div>
         )}
+
+        {/* Wallet Address (Privy users) */}
+        {authenticated && embeddedWallet?.address && (
+          <div className="py-3 border-t border-[var(--border-subtle)]">
+            <h3 className="px-4 text-[12px] font-medium text-[var(--text-tertiary)] uppercase tracking-wider mb-2">
+              Account
+            </h3>
+            <button
+              onClick={handleCopyAddress}
+              className="w-full flex items-center gap-3 py-3 px-4 hover:bg-[var(--bg-hover)] transition-colors"
+            >
+              <Wallet className="w-5 h-5 text-[var(--text-tertiary)]" />
+              <div className="flex-1 text-left min-w-0">
+                <p className="text-[14px] text-[var(--text-primary)]">Wallet Address</p>
+                <p className="text-[12px] text-[var(--text-secondary)] font-mono truncate">
+                  {embeddedWallet.address}
+                </p>
+              </div>
+              {addressCopied ? (
+                <Check className="w-4 h-4 text-[var(--accent-green)]" />
+              ) : (
+                <Copy className="w-4 h-4 text-[var(--text-tertiary)]" />
+              )}
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Footer - Logout Button */}
@@ -709,6 +778,48 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
                 className="flex-1 py-3 text-[14px] font-medium text-red-500 hover:bg-[var(--bg-hover)] transition-colors border-l border-[var(--border-default)]"
               >
                 Log Out
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Database Deletion Error Dialog */}
+      {deletionError && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="bg-[var(--bg-primary)] rounded-xl shadow-xl max-w-sm w-full mx-4 overflow-hidden">
+            <div className="p-4">
+              <h3 className="text-[16px] font-semibold text-red-500 mb-2">
+                Failed to clear data
+              </h3>
+              <p className="text-[14px] text-[var(--text-secondary)] mb-3">
+                Could not delete the local database. This may cause sync issues if you log back in.
+              </p>
+              <p className="text-[12px] text-[var(--text-tertiary)] bg-[var(--bg-secondary)] p-2 rounded font-mono break-all">
+                {deletionError}
+              </p>
+            </div>
+            <div className="flex flex-col border-t border-[var(--border-default)]">
+              <button
+                onClick={() => {
+                  setDeletionError(null);
+                  handleLogout(true);
+                }}
+                className="py-3 text-[14px] font-medium text-[var(--accent-blue)] hover:bg-[var(--bg-hover)] transition-colors border-b border-[var(--border-default)]"
+              >
+                Try Again
+              </button>
+              <button
+                onClick={handleForceLogout}
+                className="py-3 text-[14px] font-medium text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)] transition-colors border-b border-[var(--border-default)]"
+              >
+                Log Out Anyway
+              </button>
+              <button
+                onClick={() => setDeletionError(null)}
+                className="py-3 text-[14px] font-medium text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] transition-colors"
+              >
+                Cancel
               </button>
             </div>
           </div>

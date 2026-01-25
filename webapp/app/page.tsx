@@ -6,6 +6,8 @@ import { QRCodeSVG } from "qrcode.react";
 import { useQRXmtpClient } from "@/hooks/useQRXmtpClient";
 import { RemoteSigner, generateSessionId } from "@/lib/signing-relay";
 import { RefreshCw, Check } from "lucide-react";
+import Image from "next/image";
+import { EmailLogin } from "@/components/auth/EmailLogin";
 import { InstallationManager } from "@/components/auth/InstallationManager";
 import { getSessionCache } from "@/lib/storage";
 
@@ -53,11 +55,15 @@ export default function Home() {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [connectedAddress, setConnectedAddress] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [isReady, setIsReady] = useState(false); // Only true once we know we need QR login
+  const [isReady, setIsReady] = useState(false); // Only true once session check completes
   const [showStagingWarning, setShowStagingWarning] = useState(false);
   const [cachedInboxId, setCachedInboxId] = useState<string | null>(null);
+  const [loginMode, setLoginMode] = useState<"choice" | "worldapp" | "email">(
+    "choice"
+  );
   const signerRef = useRef<RemoteSigner | null>(null);
   const { initializeWithRemoteSigner, restoreSession } = useQRXmtpClient();
+  const isPrivyEnabled = Boolean(process.env.NEXT_PUBLIC_PRIVY_APP_ID);
 
   const qrUrl = sessionId
     ? `https://worldcoin.org/mini-app?app_id=${MINI_APP_ID}&path=${encodeURIComponent(
@@ -65,7 +71,7 @@ export default function Home() {
       )}`
     : null;
 
-  const startSession = async (isInitial = false) => {
+  const startSession = async () => {
     signerRef.current?.cleanup();
 
     setError(null);
@@ -98,11 +104,6 @@ export default function Home() {
 
       signerRef.current = signer;
       setState("waiting_for_scan");
-
-      // Only set ready (trigger animations) on initial load, not retries
-      if (isInitial) {
-        setIsReady(true);
-      }
 
       await signer.connect();
       setState("initializing_xmtp");
@@ -150,7 +151,26 @@ export default function Home() {
   };
 
   const handleRetry = () => {
+    setLoginMode("worldapp");
     signerRef.current?.cleanup();
+    startSession();
+  };
+
+  const handleEmailLoginStart = () => {
+    setLoginMode("email");
+    signerRef.current?.cleanup();
+    setError(null);
+    setConnectedAddress(null);
+    setSessionId(null);
+    setCachedInboxId(null);
+    setState("initializing");
+  };
+
+  const handleWorldAppLogin = () => {
+    setLoginMode("worldapp");
+    setError(null);
+    setConnectedAddress(null);
+    setCachedInboxId(null);
     startSession();
   };
 
@@ -175,9 +195,6 @@ export default function Home() {
         if (restored) {
           // Session restored, redirect to chat
           router.push("/chat");
-        } else {
-          // No session, start QR flow
-          startSession(true);
         }
       })
       .catch((error) => {
@@ -187,17 +204,17 @@ export default function Home() {
         if (errorMessage === "TAB_LOCKED") {
           // Redirect to chat page which will show the "open in another tab" message
           router.push("/chat");
-        } else {
-          // Other error, start QR flow
-          startSession(true);
         }
+      })
+      .finally(() => {
+        setIsReady(true);
       });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Show staging app warning after 10 seconds of waiting for scan
   useEffect(() => {
-    if (state !== "waiting_for_scan") {
+    if (loginMode !== "worldapp" || state !== "waiting_for_scan") {
       setShowStagingWarning(false);
       return;
     }
@@ -207,7 +224,7 @@ export default function Home() {
     }, 10000);
 
     return () => clearTimeout(timer);
-  }, [state]);
+  }, [state, loginMode]);
 
   const getStatusText = () => {
     switch (state) {
@@ -242,8 +259,15 @@ export default function Home() {
     "initializing_xmtp",
   ].includes(state);
 
-  const showQR = state === "waiting_for_scan" && qrUrl;
-  const showInstallationManager = state === "installation_limit" && cachedInboxId;
+  const showWorldAppFlow = loginMode === "worldapp";
+  const showQR = showWorldAppFlow && state === "waiting_for_scan" && qrUrl;
+  const showInstallationManager =
+    showWorldAppFlow && state === "installation_limit" && cachedInboxId;
+  const statusText = showWorldAppFlow ? getStatusText() : "";
+  const worldAppButtonClassName =
+    "w-full flex items-center justify-center gap-2 px-5 py-3 text-[15px] font-medium text-white bg-[#191919] hover:bg-[#2a2a2a] rounded-xl transition-colors";
+  const emailLinkClassName =
+    "text-[14px] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] transition-colors";
 
   // Show minimal loading while checking session
   if (!isReady) {
@@ -310,111 +334,144 @@ export default function Home() {
       `}</style>
 
       <div className="min-h-screen bg-[var(--bg-primary)] flex flex-col items-center justify-center p-6">
-        {showInstallationManager ? (
-          <InstallationManager
-            inboxId={cachedInboxId}
-            onRevokeComplete={handleInstallationRevokeComplete}
-            onCancel={handleInstallationCancel}
-            getSigner={() => signerRef.current!.getSigner()}
-          />
-        ) : (
         <div className="w-full max-w-sm flex flex-col items-center">
+          {/* App Icon */}
+          <div className="mb-4 animate-fade-in">
+            <Image
+              src="/app-icon.png"
+              alt="World Chat"
+              width={80}
+              height={80}
+              className="rounded-2xl"
+              priority
+            />
+          </div>
+
           {/* Title */}
-          <h1 className="text-[32px] font-semibold text-[var(--text-primary)] tracking-[-0.02em] mb-2 animate-fade-in">
+          <h1 className="text-[32px] font-semibold text-[var(--text-primary)] tracking-[-0.02em] mb-6 animate-fade-in stagger-1">
             World Chat
           </h1>
 
-          {/* Subtitle */}
-          <p className="text-[15px] text-[var(--text-quaternary)] mb-10 animate-fade-in stagger-1">
-            Scan to sign in
-          </p>
-
-          {/* QR Code Card */}
-          <div className="relative mb-8 animate-fade-in stagger-2">
-            <div className="relative w-[280px] h-[280px] rounded-2xl flex items-center justify-center bg-[var(--bg-tertiary)]">
-              {showQR ? (
-                <div className="relative animate-scale-in p-5 bg-white rounded-xl">
-                  <QRCodeSVG
-                    value={qrUrl}
-                    size={200}
-                    level="M"
-                    includeMargin={false}
-                    bgColor="white"
-                    fgColor="#1D1D1F"
-                  />
-                </div>
-              ) : state === "error" ? (
-                <div className="animate-scale-in w-16 h-16 rounded-full bg-[#FF3B30]/10 flex items-center justify-center">
-                  <svg
-                    className="w-7 h-7 text-[#FF3B30]"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                    strokeWidth={2}
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      d="M6 18L18 6M6 6l12 12"
-                    />
-                  </svg>
-                </div>
-              ) : state === "success" ? (
-                <div className="animate-scale-in w-16 h-16 rounded-full bg-[#34C759]/10 flex items-center justify-center">
-                  <Check className="w-7 h-7 text-[#34C759]" strokeWidth={2.5} />
-                </div>
-              ) : (
-                <PulseLoader />
-              )}
-            </div>
+          {/* Login Buttons */}
+          <div className="w-full flex flex-col items-center gap-4 animate-fade-in stagger-2">
+            <button
+              onClick={handleWorldAppLogin}
+              className={worldAppButtonClassName}
+            >
+              Sign in with World App
+            </button>
+            {isPrivyEnabled && (
+              <EmailLogin
+                onInitialize={initializeWithRemoteSigner}
+                onLoginStart={handleEmailLoginStart}
+                label="Sign in with email"
+                showIcon={false}
+                buttonClassName={emailLinkClassName}
+              />
+            )}
           </div>
 
-          {/* Status */}
-          {state !== "waiting_for_scan" && (
-            <p
-              className={`text-[15px] font-medium mb-3 transition-all duration-200 animate-fade-in ${
-                state === "error"
-                  ? "text-[#FF3B30]"
-                  : state === "success"
-                  ? "text-[#34C759]"
-                  : "text-[var(--text-primary)]"
-              }`}
-            >
-              {getStatusText()}
-            </p>
-          )}
+          {showWorldAppFlow && (
+            <div className="w-full flex flex-col items-center mt-8">
+              {showInstallationManager ? (
+                <InstallationManager
+                  inboxId={cachedInboxId!}
+                  onRevokeComplete={handleInstallationRevokeComplete}
+                  onCancel={handleInstallationCancel}
+                  getSigner={() => signerRef.current!.getSigner()}
+                />
+              ) : (
+                <>
+                  {/* QR Code Card */}
+                  <div className="relative mb-6 animate-fade-in stagger-2">
+                    <div className="relative w-[280px] h-[280px] rounded-2xl flex items-center justify-center bg-[var(--bg-tertiary)]">
+                      {showQR ? (
+                        <div className="relative animate-scale-in p-5 bg-white rounded-xl">
+                          <QRCodeSVG
+                            value={qrUrl}
+                            size={200}
+                            level="M"
+                            includeMargin={false}
+                            bgColor="white"
+                            fgColor="#1D1D1F"
+                          />
+                        </div>
+                      ) : state === "error" ? (
+                        <div className="animate-scale-in w-16 h-16 rounded-full bg-[#FF3B30]/10 flex items-center justify-center">
+                          <svg
+                            className="w-7 h-7 text-[#FF3B30]"
+                            fill="none"
+                            viewBox="0 0 24 24"
+                            stroke="currentColor"
+                            strokeWidth={2}
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              d="M6 18L18 6M6 6l12 12"
+                            />
+                          </svg>
+                        </div>
+                      ) : state === "success" ? (
+                        <div className="animate-scale-in w-16 h-16 rounded-full bg-[#34C759]/10 flex items-center justify-center">
+                          <Check className="w-7 h-7 text-[#34C759]" strokeWidth={2.5} />
+                        </div>
+                      ) : (
+                        <PulseLoader />
+                      )}
+                    </div>
+                  </div>
 
-          {/* Address */}
-          {connectedAddress && state !== "error" && (
-            <p className="text-[13px] text-[var(--text-quaternary)] font-mono mb-4 animate-fade-in">
-              {connectedAddress.slice(0, 6)}...{connectedAddress.slice(-4)}
-            </p>
-          )}
+                  {/* Status */}
+                  {statusText && (
+                    <p
+                      className={`text-[15px] font-medium mb-3 transition-all duration-200 animate-fade-in ${
+                        state === "error"
+                          ? "text-[#FF3B30]"
+                          : state === "success"
+                          ? "text-[#34C759]"
+                          : "text-[var(--text-primary)]"
+                      }`}
+                    >
+                      {statusText}
+                    </p>
+                  )}
 
-          {/* Retry */}
-          {state === "error" && (
-            <button
-              onClick={handleRetry}
-              className="flex items-center gap-2 px-5 py-2.5 text-[15px] font-medium text-[var(--accent-blue)] hover:bg-[var(--accent-blue)]/5 active:bg-[var(--accent-blue)]/10 rounded-full transition-all duration-200"
-            >
-              <RefreshCw className="w-4 h-4" />
-              Try again
-            </button>
-          )}
+                  {/* Address */}
+                  {connectedAddress && state !== "error" && (
+                    <p className="text-[13px] text-[var(--text-quaternary)] font-mono mb-4 animate-fade-in">
+                      {connectedAddress.slice(0, 6)}...{connectedAddress.slice(-4)}
+                    </p>
+                  )}
 
-          {/* Loading hint */}
-          {isLoading && state !== "initializing" && (
-            <p className="text-[13px] text-[var(--text-quaternary)] animate-fade-in">
-              Keep World App open
-            </p>
-          )}
+                  {/* Retry */}
+                  {state === "error" && (
+                    <button
+                      onClick={handleRetry}
+                      className="flex items-center gap-2 px-5 py-2.5 text-[15px] font-medium text-[var(--accent-blue)] hover:bg-[var(--accent-blue)]/5 active:bg-[var(--accent-blue)]/10 rounded-full transition-all duration-200"
+                    >
+                      <RefreshCw className="w-4 h-4" />
+                      Try again
+                    </button>
+                  )}
 
-          {/* Staging app warning - shown after 10 seconds */}
-          {showStagingWarning && state === "waiting_for_scan" && (
-            <p className="text-[12px] text-[#FF9500] text-center max-w-[280px] animate-fade-in mt-2">
-              If you have the staging World App installed, the deep link will
-              not work. Make sure to delete it.
-            </p>
+                  {/* Loading hint */}
+                  {isLoading && state !== "initializing" && (
+                    <p className="text-[13px] text-[var(--text-quaternary)] animate-fade-in">
+                      Keep World App open
+                    </p>
+                  )}
+
+                  {/* Staging app warning - shown after 10 seconds */}
+                  {showStagingWarning && state === "waiting_for_scan" && (
+                    <p className="text-[12px] text-[#FF9500] text-center max-w-[280px] animate-fade-in mt-2">
+                      If you have the staging World App installed, the deep link will
+                      not work. Make sure to delete it.
+                    </p>
+                  )}
+                </>
+              )}
+            </div>
           )}
 
           {/* Footer */}
@@ -443,7 +500,6 @@ export default function Home() {
             </div>
           </div>
         </div>
-        )}
       </div>
     </>
   );

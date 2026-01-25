@@ -1,6 +1,11 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
-import { JotaiProvider, ThemeProvider, themeScript } from "@/components/providers";
+import {
+  JotaiProvider,
+  PrivyAuthProvider,
+  ThemeProvider,
+  themeScript,
+} from "@/components/providers";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -30,6 +35,8 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const privyAppId = process.env.NEXT_PUBLIC_PRIVY_APP_ID;
+
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
@@ -37,11 +44,12 @@ export default function RootLayout({
       </head>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+        suppressHydrationWarning
       >
         <JotaiProvider>
-          <ThemeProvider>
-            {children}
-          </ThemeProvider>
+          <PrivyAuthProvider appId={privyAppId}>
+            <ThemeProvider>{children}</ThemeProvider>
+          </PrivyAuthProvider>
         </JotaiProvider>
       </body>
     </html>
