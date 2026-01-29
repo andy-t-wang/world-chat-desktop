@@ -180,7 +180,7 @@ export function MessageText({ text, isOwnMessage, onTickerClick, onMentionClick 
 
   return (
     <p
-      className={`text-[15px] leading-[1.35] whitespace-pre-wrap break-words ${
+      className={`text-[16px] leading-[1.4] whitespace-pre-wrap break-words ${
         isOwnMessage ? 'text-white' : 'text-[var(--text-primary)]'
       }`}
     >

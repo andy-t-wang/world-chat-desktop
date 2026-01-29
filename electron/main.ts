@@ -966,10 +966,10 @@ async function createWindow() {
   const isMac = process.platform === 'darwin';
 
   mainWindow = new BrowserWindow({
-    width: 1200,
-    height: 800,
-    minWidth: 800,
-    minHeight: 600,
+    width: 980,
+    height: 655,
+    minWidth: 700,
+    minHeight: 500,
     center: true, // Center window on screen like Signal
     // macOS-specific title bar styling
     ...(isMac && {
