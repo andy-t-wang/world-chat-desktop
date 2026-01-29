@@ -511,7 +511,7 @@ export const HighlightedInput = forwardRef<
           placeholder={hasTickers ? "" : placeholder}
           rows={1}
           disabled={disabled}
-          className={`relative w-full px-4 py-2.5 bg-[var(--bg-hover)] border border-[var(--border-default)] rounded-2xl outline-none resize-none leading-[1.4] transition-all scrollbar-hide ${
+          className={`relative w-full px-4 py-2.5 bg-[var(--bubble-incoming)] rounded-[20px] outline-none resize-none leading-[1.4] transition-all scrollbar-hide ${
             hasTickers
               ? "text-transparent caret-[var(--text-primary)]"
               : "text-[var(--text-primary)] placeholder-[var(--text-quaternary)]"
@@ -523,7 +523,7 @@ export const HighlightedInput = forwardRef<
         {hasTickers && (
           <div
             ref={overlayRef}
-            className="absolute inset-0 px-4 py-2.5 border border-transparent rounded-2xl text-[var(--text-primary)] leading-[1.4] overflow-hidden pointer-events-none whitespace-pre-wrap break-words"
+            className="absolute inset-0 px-4 py-2.5 rounded-[20px] text-[var(--text-primary)] leading-[1.4] overflow-hidden pointer-events-none whitespace-pre-wrap break-words"
             style={{ minHeight: "44px", maxHeight: "128px" }}
             aria-hidden="true"
           >

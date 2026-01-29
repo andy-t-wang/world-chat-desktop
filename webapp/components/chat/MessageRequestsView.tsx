@@ -233,7 +233,7 @@ export function MessageRequestsView({ onBack }: MessageRequestsViewProps) {
   });
 
   return (
-    <div className="flex flex-col h-full bg-[var(--bg-primary)]">
+    <div className="flex flex-col h-full bg-[var(--bg-sidebar)]">
       {/* Header */}
       <div className="shrink-0 px-4 py-2 border-b border-[var(--border-subtle)]">
         <div className="flex items-center gap-1.5">

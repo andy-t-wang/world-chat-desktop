@@ -66,7 +66,7 @@ export function TickerPreview({ symbol, type, onOpenModal, onLoad }: TickerPrevi
   // Loading state - skeleton pulse
   if (isLoading && !data) {
     return (
-      <div className="w-[240px] rounded-xl bg-[var(--bg-tertiary)] p-3.5 shadow-sm">
+      <div className="w-[240px] rounded-xl bg-[var(--bubble-incoming)] p-3.5 shadow-sm">
         <div className="flex items-center gap-2 mb-2.5">
           <div className="w-7 h-7 rounded-full bg-[var(--bg-secondary)] animate-pulse" />
           <div className="flex-1">
@@ -91,7 +91,7 @@ export function TickerPreview({ symbol, type, onOpenModal, onLoad }: TickerPrevi
     const isNotFound = error.toLowerCase().includes('not found');
 
     return (
-      <div className="w-[240px] rounded-xl bg-[var(--bg-tertiary)] p-3.5 shadow-sm">
+      <div className="w-[240px] rounded-xl bg-[var(--bubble-incoming)] p-3.5 shadow-sm">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <AlertCircle className="w-4 h-4 text-[var(--text-quaternary)]" />
@@ -128,7 +128,7 @@ export function TickerPreview({ symbol, type, onOpenModal, onLoad }: TickerPrevi
   return (
     <div
       onClick={() => onOpenModal(symbol, type, data)}
-      className="group cursor-pointer w-[240px] rounded-xl bg-[var(--bg-tertiary)] p-3.5 shadow-sm hover:shadow-md transition-all duration-200 hover:scale-[1.02] outline-none focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-blue)] focus-visible:ring-offset-2"
+      className="group cursor-pointer w-[240px] rounded-xl bg-[var(--bubble-incoming)] p-3.5 shadow-sm hover:shadow-md transition-all duration-200 hover:scale-[1.02] outline-none focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-blue)] focus-visible:ring-offset-2"
       role="button"
       tabIndex={0}
       onKeyDown={(e) => {

@@ -45,7 +45,12 @@ import { MessageContextMenu } from "./MessageContextMenu";
 import { ReplyPreview } from "./ReplyPreview";
 import { ReplyBubble } from "./ReplyBubble";
 import { ReactionDetailsMenu } from "./ReactionDetailsMenu";
-import { chatBackgroundStyle, chatBackgroundStyleDark } from "./ChatBackground";
+import {
+  chatBackgroundStylePattern,
+  chatBackgroundStylePatternDark,
+  chatBackgroundStyleSolid,
+  chatBackgroundStyleSolidDark,
+} from "./ChatBackground";
 import { replyingToAtom, messageInputDraftAtom } from "@/stores/ui";
 import {
   isTransactionReference,
@@ -72,7 +77,7 @@ import {
   reactionsVersionAtom,
   messageCache,
 } from "@/stores/messages";
-import { linkPreviewEnabledAtom } from "@/stores/settings";
+import { linkPreviewEnabledAtom, chatBackgroundStyleAtom } from "@/stores/settings";
 import { streamManager } from "@/lib/xmtp/StreamManager";
 import type { DecodedMessage } from "@xmtp/browser-sdk";
 import type { PendingMessage } from "@/types/messages";
@@ -871,8 +876,8 @@ function PendingMessageBubble({
 
   // Match the radius logic from sent messages
   const senderRadius = isFirstInGroup
-    ? "rounded-tl-[16px] rounded-tr-[16px] rounded-bl-[16px] rounded-br-[4px]"
-    : "rounded-tl-[16px] rounded-tr-[4px] rounded-bl-[16px] rounded-br-[4px]";
+    ? "rounded-[18px] rounded-br-[6px]"
+    : "rounded-[18px] rounded-tr-[6px] rounded-br-[6px]";
 
   return (
     <AnimatedMessageWrapper className={`flex flex-col items-end ${isFirstInGroup ? "mt-3" : "mt-0.5"}`}>
@@ -1120,6 +1125,7 @@ export function MessagePanel({
   const client = useAtomValue(xmtpClientAtom);
   const _readReceiptVersion = useAtomValue(readReceiptVersionAtom);
   const linkPreviewEnabled = useAtomValue(linkPreviewEnabledAtom);
+  const chatBgStyle = useAtomValue(chatBackgroundStyleAtom);
 
   const {
     messageIds,
@@ -2210,7 +2216,11 @@ export function MessagePanel({
         ref={parentRef}
         onScroll={handleScroll}
         className="flex-1 overflow-auto flex flex-col scrollbar-auto-hide relative bg-[var(--chat-bg)]"
-        style={isDarkMode ? chatBackgroundStyleDark : chatBackgroundStyle}
+        style={
+          chatBgStyle === 'pattern'
+            ? (isDarkMode ? chatBackgroundStylePatternDark : chatBackgroundStylePattern)
+            : (isDarkMode ? chatBackgroundStyleSolidDark : chatBackgroundStyleSolid)
+        }
       >
         {/* Message Request Banner - floating at top */}
         {isMessageRequest && (
@@ -3049,15 +3059,15 @@ export function MessagePanel({
                     );
                     const isUrlOnly = linkPreviewEnabled && isJustUrl(text);
 
-                    // Sender bubble: all corners 16px except bottom-right is 8px (pointing to sender)
+                    // Sender bubble: 18px corners, slightly smaller on bottom-right
                     const senderRadius =
                       isFirstInGroup && isLastInGroup
-                        ? "rounded-tl-[16px] rounded-tr-[16px] rounded-bl-[16px] rounded-br-[4px]"
+                        ? "rounded-[18px] rounded-br-[6px]"
                         : isFirstInGroup
-                        ? "rounded-tl-[16px] rounded-tr-[16px] rounded-bl-[16px] rounded-br-[4px]"
+                        ? "rounded-[18px] rounded-br-[6px]"
                         : isLastInGroup
-                        ? "rounded-tl-[16px] rounded-tr-[4px] rounded-bl-[16px] rounded-br-[4px]"
-                        : "rounded-tl-[16px] rounded-tr-[4px] rounded-bl-[16px] rounded-br-[4px]";
+                        ? "rounded-[18px] rounded-tr-[6px] rounded-br-[6px]"
+                        : "rounded-[18px] rounded-tr-[6px] rounded-br-[6px]";
 
                     // URL-only message: link preview IS the bubble
                     if (isUrlOnly) {
@@ -3234,15 +3244,15 @@ export function MessagePanel({
 
                   const isUrlOnly = linkPreviewEnabled && isJustUrl(text);
 
-                  // Recipient bubble: all corners 16px except bottom-left is 4px (pointing to sender)
+                  // Recipient bubble: 18px corners, slightly smaller on bottom-left
                   const recipientRadius =
                     isFirstInGroup && isLastInGroup
-                      ? "rounded-tl-[16px] rounded-tr-[16px] rounded-bl-[4px] rounded-br-[16px]"
+                      ? "rounded-[18px] rounded-bl-[6px]"
                       : isFirstInGroup
-                      ? "rounded-tl-[16px] rounded-tr-[16px] rounded-bl-[4px] rounded-br-[16px]"
+                      ? "rounded-[18px] rounded-bl-[6px]"
                       : isLastInGroup
-                      ? "rounded-tl-[4px] rounded-tr-[16px] rounded-bl-[4px] rounded-br-[16px]"
-                      : "rounded-tl-[4px] rounded-tr-[16px] rounded-bl-[4px] rounded-br-[16px]";
+                      ? "rounded-[18px] rounded-tl-[6px] rounded-bl-[6px]"
+                      : "rounded-[18px] rounded-tl-[6px] rounded-bl-[6px]";
 
                   // URL-only incoming message: link preview IS the bubble
                   if (isUrlOnly) {

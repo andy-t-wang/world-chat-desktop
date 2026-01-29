@@ -1,9 +1,9 @@
 // Subtle chat background pattern - similar to WhatsApp/Telegram
 // Uses inline SVG as CSS background for proper tiling across full scroll area
 
-// Light mode SVG pattern
+// Light mode SVG pattern (Signal-like warm white)
 const lightPatternSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="60" height="60">
-  <rect width="60" height="60" fill="#E8E5DE"/>
+  <rect width="60" height="60" fill="#FFFFFF"/>
   <g opacity="0.4">
     <path d="M8 12c0-2.2 1.8-4 4-4h6c2.2 0 4 1.8 4 4v4c0 2.2-1.8 4-4 4h-2l-3 3v-3h-1c-2.2 0-4-1.8-4-4v-4z" fill="none" stroke="#C5C0B6" stroke-width="1"/>
     <circle cx="45" cy="10" r="1.5" fill="#C5C0B6"/>
@@ -18,9 +18,9 @@ const lightPatternSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="60" heig
   </g>
 </svg>`;
 
-// Dark mode SVG pattern - subtle dark colors
+// Dark mode SVG pattern - Signal-like dark
 const darkPatternSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="60" height="60">
-  <rect width="60" height="60" fill="#141415"/>
+  <rect width="60" height="60" fill="#121212"/>
   <g opacity="0.3">
     <path d="M8 12c0-2.2 1.8-4 4-4h6c2.2 0 4 1.8 4 4v4c0 2.2-1.8 4-4 4h-2l-3 3v-3h-1c-2.2 0-4-1.8-4-4v-4z" fill="none" stroke="#3D3D3F" stroke-width="1"/>
     <circle cx="45" cy="10" r="1.5" fill="#3D3D3F"/>
@@ -39,13 +39,21 @@ const darkPatternSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="60" heigh
 const encodedLightSvg = encodeURIComponent(lightPatternSvg);
 const encodedDarkSvg = encodeURIComponent(darkPatternSvg);
 
-// Export as CSS style objects
-export const chatBackgroundStyle: React.CSSProperties = {
+// Pattern background styles (WhatsApp-like)
+export const chatBackgroundStylePattern: React.CSSProperties = {
   backgroundImage: `url("data:image/svg+xml,${encodedLightSvg}")`,
   backgroundRepeat: 'repeat',
 };
 
-export const chatBackgroundStyleDark: React.CSSProperties = {
+export const chatBackgroundStylePatternDark: React.CSSProperties = {
   backgroundImage: `url("data:image/svg+xml,${encodedDarkSvg}")`,
   backgroundRepeat: 'repeat',
 };
+
+// Solid background styles (Signal-like) - just the base color, no pattern
+export const chatBackgroundStyleSolid: React.CSSProperties = {};
+export const chatBackgroundStyleSolidDark: React.CSSProperties = {};
+
+// Legacy exports for backwards compatibility
+export const chatBackgroundStyle = chatBackgroundStylePattern;
+export const chatBackgroundStyleDark = chatBackgroundStylePatternDark;

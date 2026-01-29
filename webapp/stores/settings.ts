@@ -31,3 +31,7 @@ export const mutedConversationIdsAtom = atomWithStorage<string[]>('muted-convers
 // Message request notifications - persisted to localStorage (default: true)
 // When enabled, shows notifications for new messages from unknown contacts
 export const messageRequestNotificationsAtom = atomWithStorage('message-request-notifications', true);
+
+// Chat background style - 'solid' for Signal-like single color, 'pattern' for WhatsApp-like pattern
+export type ChatBackgroundStyle = 'solid' | 'pattern';
+export const chatBackgroundStyleAtom = atomWithStorage<ChatBackgroundStyle>('chat-background-style', 'solid');

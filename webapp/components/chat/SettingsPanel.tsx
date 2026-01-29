@@ -38,6 +38,7 @@ import {
   themePreferenceAtom,
   messageRequestNotificationsAtom,
   settingsPanelOpenAtom,
+  chatBackgroundStyleAtom,
 } from "@/stores/settings";
 import { streamManager } from "@/lib/xmtp/StreamManager";
 import { clearSession } from "@/lib/auth/session";
@@ -75,6 +76,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
   const [soundMuted, setSoundMuted] = useAtom(soundMutedAtom);
   const [hideEmptyConversations, setHideEmptyConversations] = useAtom(hideEmptyConversationsAtom);
   const [themePreference, setThemePreference] = useAtom(themePreferenceAtom);
+  const [chatBgStyle, setChatBgStyle] = useAtom(chatBackgroundStyleAtom);
   const [messageRequestNotifications, setMessageRequestNotifications] = useAtom(messageRequestNotificationsAtom);
 
   // Privy wallet info
@@ -296,7 +298,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
   };
 
   return (
-    <div className="flex-1 min-h-0 flex flex-col bg-[var(--bg-primary)]">
+    <div className="flex-1 min-h-0 flex flex-col bg-[var(--bg-sidebar)]">
       {/* Header */}
       <div className="shrink-0 flex items-center gap-3 px-4 py-3 border-b border-[var(--border-default)]">
         <button
@@ -349,6 +351,33 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
               <Moon className="w-4 h-4" />
               Dark
             </button>
+          </div>
+
+          {/* Chat Background */}
+          <div className="mt-3">
+            <p className="text-[12px] text-[var(--text-secondary)] mb-2">Chat Background</p>
+            <div className="w-full flex items-center gap-1 p-1 bg-[var(--bg-tertiary)] rounded-lg">
+              <button
+                onClick={() => setChatBgStyle("solid")}
+                className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-md text-[13px] font-medium transition-all ${
+                  chatBgStyle === "solid"
+                    ? "bg-[var(--bg-primary)] text-[var(--text-primary)] shadow-sm"
+                    : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+                }`}
+              >
+                Solid
+              </button>
+              <button
+                onClick={() => setChatBgStyle("pattern")}
+                className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-md text-[13px] font-medium transition-all ${
+                  chatBgStyle === "pattern"
+                    ? "bg-[var(--bg-primary)] text-[var(--text-primary)] shadow-sm"
+                    : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+                }`}
+              >
+                Pattern
+              </button>
+            </div>
           </div>
         </div>
 

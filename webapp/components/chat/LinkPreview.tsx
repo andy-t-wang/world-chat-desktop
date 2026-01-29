@@ -50,7 +50,7 @@ export function LinkPreview({ metadata, isLoading, isOwnMessage }: LinkPreviewPr
   if (isLoading || !metadata) {
     const domain = metadata?.domain ?? 'Loading...';
     return (
-      <div className="bg-[var(--bg-tertiary)] rounded-2xl overflow-hidden w-[340px]">
+      <div className="bg-[var(--bubble-incoming)] rounded-2xl overflow-hidden w-[340px]">
         <div className="flex flex-col gap-2 items-center justify-center px-8 py-10">
           <Loader2 className="w-5 h-5 text-[var(--text-tertiary)] animate-spin" />
           <span className="text-[11px] text-[var(--text-tertiary)] truncate max-w-full">
@@ -75,7 +75,7 @@ export function LinkPreview({ metadata, isLoading, isOwnMessage }: LinkPreviewPr
     return (
       <div
         onClick={handleClick}
-        className="cursor-pointer overflow-hidden rounded-2xl bg-[var(--bg-secondary)] border border-[var(--border-subtle)] w-[340px] hover:bg-[var(--bg-tertiary)] transition-colors group"
+        className="cursor-pointer overflow-hidden rounded-2xl bg-[var(--bubble-incoming)] border border-[var(--border-subtle)] w-[340px] hover:opacity-90 transition-opacity group"
       >
         {/* Header with X logo and author */}
         <div className="px-4 pt-3 pb-2 flex items-center gap-2">
@@ -157,11 +157,11 @@ export function LinkPreview({ metadata, isLoading, isOwnMessage }: LinkPreviewPr
   return (
     <div
       onClick={handleClick}
-      className="cursor-pointer overflow-hidden rounded-2xl w-[340px] bg-[var(--bg-tertiary)] hover:bg-[var(--bg-hover)] transition-colors"
+      className="cursor-pointer overflow-hidden rounded-2xl w-[340px] bg-[var(--bubble-incoming)] hover:opacity-90 transition-opacity"
     >
       {/* Large image */}
       {hasImage && (
-        <div className="relative h-[180px] bg-[var(--bg-hover)]">
+        <div className="relative h-[180px] bg-[var(--bubble-incoming)]">
           {!imageLoaded && (
             <div className="absolute inset-0 flex items-center justify-center">
               <Loader2 className="w-5 h-5 text-[var(--text-tertiary)] animate-spin" />

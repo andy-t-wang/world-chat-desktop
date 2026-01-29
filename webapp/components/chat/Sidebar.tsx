@@ -72,7 +72,7 @@ export function Sidebar({ onNewChat, className, width }: SidebarProps) {
   if (showSettings) {
     return (
       <aside
-        className={`h-full bg-[var(--bg-primary)] border-r border-[var(--border-default)] flex flex-col shrink-0 ${className || ''}`}
+        className={`h-full bg-[var(--bg-sidebar)] border-r border-[var(--border-default)] flex flex-col shrink-0 ${className || ''}`}
         style={{ width: width || 320 }}
       >
         {/* Electron drag region */}
@@ -86,7 +86,7 @@ export function Sidebar({ onNewChat, className, width }: SidebarProps) {
   if (showRequests) {
     return (
       <aside
-        className={`h-full bg-[var(--bg-primary)] border-r border-[var(--border-default)] flex flex-col shrink-0 ${className || ''}`}
+        className={`h-full bg-[var(--bg-sidebar)] border-r border-[var(--border-default)] flex flex-col shrink-0 ${className || ''}`}
         style={{ width: width || 320 }}
       >
         {/* Electron drag region */}
@@ -98,7 +98,7 @@ export function Sidebar({ onNewChat, className, width }: SidebarProps) {
 
   return (
     <aside
-      className={`h-full bg-[var(--bg-primary)] border-r border-[var(--border-default)] flex flex-col shrink-0 ${className || ''}`}
+      className={`h-full bg-[var(--bg-sidebar)] border-r border-[var(--border-default)] flex flex-col shrink-0 ${className || ''}`}
       style={{ width: width || 320 }}
     >
       {/* Electron drag region */}
@@ -181,7 +181,7 @@ export function Sidebar({ onNewChat, className, width }: SidebarProps) {
       {/* Translation Success Toast */}
       {showTranslationToast && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 animate-in fade-in slide-in-from-bottom-4 duration-300">
-          <div className="flex items-center gap-2 px-4 py-3 bg-[var(--bg-primary)] rounded-xl shadow-lg border border-[var(--border-default)]">
+          <div className="flex items-center gap-2 px-4 py-3 bg-[var(--bg-sidebar)] rounded-xl shadow-lg border border-[var(--border-default)]">
             <CheckCircle className="w-5 h-5 text-green-500" />
             <span className="text-[14px] text-[var(--text-primary)]">Private Translations installed</span>
           </div>
