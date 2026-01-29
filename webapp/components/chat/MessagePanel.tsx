@@ -1751,10 +1751,17 @@ export function MessagePanel({
   const prevDisplayCountRef = useRef(0);
   useLayoutEffect(() => {
     if (parentRef.current && displayItems.length > 0) {
-      const isNewMessage = displayItems.length > prevDisplayCountRef.current;
       // Only auto-scroll if user was near bottom, or this is initial load
       if (isNearBottomRef.current || prevDisplayCountRef.current === 0) {
-        parentRef.current.scrollTop = parentRef.current.scrollHeight;
+        // Use double RAF to ensure DOM has fully rendered and layout is calculated
+        // This fixes the issue where timestamp gets cut off when sending messages
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            if (parentRef.current) {
+              parentRef.current.scrollTop = parentRef.current.scrollHeight;
+            }
+          });
+        });
       }
     }
     prevDisplayCountRef.current = displayItems.length;
