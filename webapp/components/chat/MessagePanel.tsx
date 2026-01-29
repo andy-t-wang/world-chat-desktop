@@ -883,10 +883,10 @@ function PendingMessageBubble({
     <AnimatedMessageWrapper className={`flex flex-col items-end ${isFirstInGroup ? "mt-3" : "mt-0.5"}`}>
       <div className="max-w-[300px]">
         <div
-          className={`px-3 py-[7px] ${senderRadius} ${bubbleBg}`}
+          className={`px-3 py-2 ${senderRadius} ${bubbleBg}`}
         >
           <p
-            className={`text-[16px] leading-[1.4] ${
+            className={`text-[16px] leading-[1.4] whitespace-pre-wrap break-words ${
               pending.status === "failed" ? "text-red-800" : "text-white"
             }`}
           >

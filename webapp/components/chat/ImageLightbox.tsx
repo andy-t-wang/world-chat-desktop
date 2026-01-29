@@ -36,11 +36,28 @@ export function ImageLightbox({ src, alt, onClose }: ImageLightboxProps) {
 
   const handleDownload = useCallback(async () => {
     try {
-      // Fetch the image as blob to handle CORS and Electron
+      // Fetch the image as blob
       const response = await fetch(src);
       const blob = await response.blob();
-      const url = URL.createObjectURL(blob);
 
+      // In Electron, use native save dialog
+      if (typeof window !== 'undefined' && window.electronAPI?.downloadFile) {
+        const arrayBuffer = await blob.arrayBuffer();
+        const buffer = Array.from(new Uint8Array(arrayBuffer));
+        const filename = alt || 'image';
+        const result = await window.electronAPI.downloadFile({
+          buffer,
+          filename,
+          mimeType: blob.type || 'image/jpeg',
+        });
+        if (!result.success && !result.canceled) {
+          console.error('Failed to save file:', result.error);
+        }
+        return;
+      }
+
+      // Web fallback: use download link
+      const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
       link.download = alt || 'image.jpg';
@@ -49,6 +66,7 @@ export function ImageLightbox({ src, alt, onClose }: ImageLightboxProps) {
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
     } catch (error) {
+      console.error('Download failed:', error);
       // Fallback: open in new tab
       window.open(src, '_blank');
     }

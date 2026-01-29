@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, safeStorage } from 'electron';
+import { app, BrowserWindow, ipcMain, safeStorage, dialog } from 'electron';
 import { ChildProcess, spawn, execSync } from 'child_process';
 import { autoUpdater } from 'electron-updater';
 import * as path from 'path';
@@ -193,6 +193,47 @@ function setupIpcHandlers() {
       console.error('Failed to read debug log:', e);
     }
     return '';
+  });
+
+  // Download file (for saving images from blob URLs)
+  ipcMain.handle('app:downloadFile', async (_, data: { buffer: number[]; filename: string; mimeType: string }) => {
+    if (!mainWindow) return { success: false, error: 'No window' };
+
+    // Determine file extension from mime type if not in filename
+    let defaultPath = data.filename;
+    if (!defaultPath.includes('.')) {
+      const ext = data.mimeType.split('/')[1] || 'bin';
+      defaultPath = `${defaultPath}.${ext}`;
+    }
+
+    // Determine file filters based on mime type
+    let filters: { name: string; extensions: string[] }[] = [];
+    if (data.mimeType.startsWith('image/')) {
+      const ext = data.mimeType.split('/')[1] || 'png';
+      filters = [{ name: 'Images', extensions: [ext] }];
+    } else if (data.mimeType.startsWith('video/')) {
+      const ext = data.mimeType.split('/')[1] || 'mp4';
+      filters = [{ name: 'Videos', extensions: [ext] }];
+    }
+
+    const result = await dialog.showSaveDialog(mainWindow, {
+      defaultPath,
+      filters: filters.length > 0 ? filters : undefined,
+    });
+
+    if (result.canceled || !result.filePath) {
+      return { success: false, canceled: true };
+    }
+
+    try {
+      // Convert number array back to Buffer and write to file
+      const buffer = Buffer.from(data.buffer);
+      fs.writeFileSync(result.filePath, buffer);
+      return { success: true, filePath: result.filePath };
+    } catch (error) {
+      console.error('Failed to save file:', error);
+      return { success: false, error: String(error) };
+    }
   });
 
   // Dock badge (macOS)

@@ -90,6 +90,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return ipcRenderer.invoke('app:focusWindow');
   },
 
+  /** Download a file (for saving images from blob URLs) */
+  downloadFile: (data: { buffer: number[]; filename: string; mimeType: string }): Promise<{ success: boolean; filePath?: string; canceled?: boolean; error?: string }> => {
+    return ipcRenderer.invoke('app:downloadFile', data);
+  },
+
   /** Listen for app shutdown preparation (cleanup before update) */
   onPrepareForShutdown: (callback: () => void): (() => void) => {
     const handler = () => callback();
@@ -243,6 +248,7 @@ declare global {
       getPlatform: () => Promise<string>;
       setBadgeCount: (count: number) => Promise<void>;
       focusWindow: () => Promise<void>;
+      downloadFile: (data: { buffer: number[]; filename: string; mimeType: string }) => Promise<{ success: boolean; filePath?: string; canceled?: boolean; error?: string }>;
       onPrepareForShutdown: (callback: () => void) => () => void;
       acknowledgeShutdown: () => Promise<void>;
       debugLog: (source: string, message: string, data?: unknown) => Promise<void>;

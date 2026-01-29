@@ -291,6 +291,8 @@ declare global {
       removeNickname: (address: string) => Promise<void>;
       getVersion: () => Promise<string>;
       getPlatform: () => Promise<string>;
+      // File download (for saving images from blob URLs)
+      downloadFile: (data: { buffer: number[]; filename: string; mimeType: string }) => Promise<{ success: boolean; filePath?: string; canceled?: boolean; error?: string }>;
       // Shutdown notification (before update install)
       onPrepareForShutdown: (callback: () => void) => () => void;
       acknowledgeShutdown: () => Promise<void>;
