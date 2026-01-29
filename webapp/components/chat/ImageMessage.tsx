@@ -65,22 +65,25 @@ export function ImageMessage({ remoteAttachment, isOwnMessage, compact, fullSize
 
   const containerStyle = getContainerStyle();
 
-  // Loading state
+  // Loading state - shimmer effect like iOS
   if (status === 'downloading' || isLoading) {
     return (
       <div
-        className={`bg-[#F3F4F5] flex items-center justify-center ${
-          compact ? 'w-full h-full' : 'border border-[rgba(0,0,0,0.1)] rounded-[16px]'
+        className={`relative overflow-hidden ${
+          compact ? 'w-full h-full' : 'rounded-[18px]'
         }`}
         style={containerStyle}
       >
-        <div className="flex flex-col items-center gap-2">
-          <Loader2 className={`animate-spin text-[#9BA3AE] ${compact ? 'w-5 h-5' : 'w-6 h-6'}`} />
-          {!compact && (
-            <span className="text-[13px] text-[#717680]">
-              Loading...
-            </span>
-          )}
+        {/* Base background */}
+        <div className="absolute inset-0 bg-[var(--bg-tertiary)]" />
+        {/* Shimmer effect */}
+        <div
+          className="absolute inset-0 bg-gradient-to-r from-transparent via-white/40 to-transparent animate-shimmer"
+          style={{ backgroundSize: '200% 100%' }}
+        />
+        {/* Centered icon */}
+        <div className="absolute inset-0 flex items-center justify-center">
+          <ImageIcon className={`text-[var(--text-tertiary)] opacity-50 ${compact ? 'w-6 h-6' : 'w-10 h-10'}`} />
         </div>
       </div>
     );
@@ -93,11 +96,11 @@ export function ImageMessage({ remoteAttachment, isOwnMessage, compact, fullSize
     if (compact) {
       const showCompactRetry = canRetry || imageError;
       return (
-        <div className="w-full h-full bg-[#F3F4F5] flex flex-col items-center justify-center gap-1">
+        <div className="w-full h-full bg-[var(--bg-tertiary)] flex flex-col items-center justify-center gap-1">
           {isUntrusted ? (
             <AlertTriangle className="w-5 h-5 text-amber-500" />
           ) : (
-            <ImageIcon className="w-5 h-5 text-[#9BA3AE]" />
+            <ImageIcon className="w-5 h-5 text-[var(--text-tertiary)]" />
           )}
           {showCompactRetry && (
             <button
@@ -105,7 +108,7 @@ export function ImageMessage({ remoteAttachment, isOwnMessage, compact, fullSize
               className="p-1 rounded hover:bg-black/5"
               title="Retry"
             >
-              <RotateCcw className="w-3.5 h-3.5 text-[#005CFF]" />
+              <RotateCcw className="w-3.5 h-3.5 text-[var(--accent-blue)]" />
             </button>
           )}
         </div>
@@ -118,19 +121,19 @@ export function ImageMessage({ remoteAttachment, isOwnMessage, compact, fullSize
     return (
       <div className="flex items-center gap-1.5">
         <div
-          className="bg-[#F3F4F5] border border-[rgba(0,0,0,0.1)] rounded-[16px] flex items-center justify-center"
+          className="bg-[var(--bg-tertiary)] rounded-[18px] flex items-center justify-center"
           style={containerStyle}
         >
           <div className="flex flex-col items-center gap-2">
             {isUntrusted ? (
-              <AlertTriangle className="w-6 h-6 text-amber-500" />
+              <AlertTriangle className="w-8 h-8 text-amber-500" />
             ) : (
-              <ImageIcon className="w-6 h-6 text-[#9BA3AE]" />
+              <ImageIcon className="w-8 h-8 text-[var(--text-tertiary)]" />
             )}
             {showRetry && (
               <button
                 onClick={handleRetry}
-                className="flex items-center gap-1 text-[13px] text-[#005CFF] hover:underline"
+                className="flex items-center gap-1 text-[13px] text-[var(--accent-blue)] hover:underline"
               >
                 <RotateCcw className="w-3.5 h-3.5" />
                 Retry

@@ -238,3 +238,17 @@ body {
 .animate-fade-in {
   animation: fade-in 0.3s ease-out forwards;
 }
+
+/* Shimmer animation for loading states */
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.animate-shimmer {
+  animation: shimmer 1.5s ease-in-out infinite;
+}
