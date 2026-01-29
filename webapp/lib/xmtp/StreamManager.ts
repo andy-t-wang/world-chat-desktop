@@ -1177,12 +1177,19 @@ class XMTPStreamManager {
       // Rebuild metadata for these conversations
       for (const conv of unknownConversations) {
         this.conversations.set(conv.id, conv);
-        const metadata = await this.buildConversationMetadata(conv, false);
-        this.conversationMetadata.set(conv.id, metadata);
+        const newMetadata = await this.buildConversationMetadata(conv, false);
+
+        // Preserve newer preview from optimistic updates
+        const existingMetadata = this.conversationMetadata.get(conv.id);
+        if (existingMetadata && existingMetadata.lastActivityNs > newMetadata.lastActivityNs) {
+          newMetadata.lastMessagePreview = existingMetadata.lastMessagePreview;
+          newMetadata.lastActivityNs = existingMetadata.lastActivityNs;
+        }
+        this.conversationMetadata.set(conv.id, newMetadata);
 
         // Add to list if not already there and has messages
         const currentIds = store.get(conversationIdsAtom);
-        if (!currentIds.includes(conv.id) && metadata.lastMessagePreview) {
+        if (!currentIds.includes(conv.id) && newMetadata.lastMessagePreview) {
           store.set(conversationIdsAtom, [...currentIds, conv.id]);
         }
       }
@@ -1345,8 +1352,15 @@ class XMTPStreamManager {
       }
 
       // Rebuild metadata
-      const metadata = await this.buildConversationMetadata(conversation, false);
-      this.conversationMetadata.set(conversationId, metadata);
+      const newMetadata = await this.buildConversationMetadata(conversation, false);
+
+      // Preserve newer preview from optimistic updates
+      const existingMetadata = this.conversationMetadata.get(conversationId);
+      if (existingMetadata && existingMetadata.lastActivityNs > newMetadata.lastActivityNs) {
+        newMetadata.lastMessagePreview = existingMetadata.lastMessagePreview;
+        newMetadata.lastActivityNs = existingMetadata.lastActivityNs;
+      }
+      this.conversationMetadata.set(conversationId, newMetadata);
       this.incrementMetadataVersion();
     } catch (error) {
       console.error(`[StreamManager] Failed to refresh conversation metadata:`, error);
@@ -1730,9 +1744,17 @@ class XMTPStreamManager {
           // Store the conversation regardless of consent
           this.conversations.set(conv.id, conv);
           // New streamed conversations - sync to get initial messages
-          const metadata = await this.buildConversationMetadata(conv, true);
-          const isNewConversation = !this.conversationMetadata.has(conv.id);
-          this.conversationMetadata.set(conv.id, metadata);
+          const newMetadata = await this.buildConversationMetadata(conv, true);
+          const existingMetadata = this.conversationMetadata.get(conv.id);
+          const isNewConversation = !existingMetadata;
+
+          // Merge metadata: preserve newer preview from optimistic updates
+          // This prevents conversation stream from overwriting recent sends
+          if (existingMetadata && existingMetadata.lastActivityNs > newMetadata.lastActivityNs) {
+            newMetadata.lastMessagePreview = existingMetadata.lastMessagePreview;
+            newMetadata.lastActivityNs = existingMetadata.lastActivityNs;
+          }
+          this.conversationMetadata.set(conv.id, newMetadata);
 
           // Always increment version for new conversations so message requests get picked up
           if (isNewConversation) {

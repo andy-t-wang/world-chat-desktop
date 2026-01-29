@@ -36,7 +36,7 @@ export function ReplyPreview({
       }}
     >
       <div
-        className="flex items-center justify-between px-4 py-3 border-b border-[var(--border-subtle)] bg-[var(--bg-primary)]"
+        className="flex items-center justify-between px-4 py-3 border-b border-[var(--border-subtle)] bg-[var(--bg-primary)] overflow-hidden"
         style={{
           transform: isVisible ? 'translateY(0)' : 'translateY(100%)',
           opacity: isVisible ? 1 : 0,
@@ -45,8 +45,8 @@ export function ReplyPreview({
       >
         {/* Blue accent bar on the left */}
         <div className="w-[3px] h-10 bg-[var(--accent-blue)] rounded-full mr-3 shrink-0" />
-        <div className="flex flex-col gap-0.5 min-w-0 flex-1">
-          <span className="text-[14px] font-semibold text-[var(--accent-blue)]">
+        <div className="flex flex-col gap-0.5 min-w-0 flex-1 overflow-hidden">
+          <span className="text-[14px] font-semibold text-[var(--accent-blue)] truncate">
             {displayName || 'You'}
           </span>
           <p className="text-[14px] text-[var(--text-secondary)] truncate">

@@ -57,10 +57,10 @@ export function ImageMessage({ remoteAttachment, isOwnMessage, compact, fullSize
     if (fullSize) {
       return {};
     }
-    // Default sizing based on orientation (from Figma)
+    // Default sizing based on orientation
     return isVertical
-      ? { width: 180, height: 232 }
-      : { width: 250, height: 193 };
+      ? { width: 240, height: 320 }
+      : { width: 350, height: 270 };
   };
 
   const containerStyle = getContainerStyle();
@@ -182,7 +182,7 @@ export function ImageMessage({ remoteAttachment, isOwnMessage, compact, fullSize
         <div className="overflow-hidden rounded-[16px] border border-[rgba(0,0,0,0.1)]">
           <video
             src={blobUrl}
-            className="block max-w-[250px] max-h-[300px] object-cover"
+            className="block max-w-[350px] max-h-[400px] object-cover"
             controls
             playsInline
             onError={handleImageError}
@@ -218,11 +218,11 @@ export function ImageMessage({ remoteAttachment, isOwnMessage, compact, fullSize
     // Default image mode
     return (
       <>
-        <div className="overflow-hidden rounded-[16px] border border-[rgba(0,0,0,0.1)]">
+        <div className="overflow-hidden rounded-[18px] border border-[rgba(0,0,0,0.1)]">
           <img
             src={blobUrl}
             alt={remoteAttachment.filename || 'Image'}
-            className="block max-w-[250px] max-h-[300px] object-cover cursor-pointer"
+            className="block max-w-[350px] max-h-[400px] object-cover cursor-pointer"
             onLoad={(e) => {
               const img = e.target as HTMLImageElement;
               setImageDimensions({ width: img.naturalWidth, height: img.naturalHeight });

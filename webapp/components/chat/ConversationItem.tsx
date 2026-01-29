@@ -135,8 +135,7 @@ export function ConversationItem(props: ConversationItemProps) {
     <button
       onClick={onClick}
       className={`
-        w-full flex items-center gap-3 px-4 py-3
-        transition-colors duration-150 text-left
+        w-full flex items-center gap-3 px-4 py-3 rounded-xl text-left
         ${isSelected
           ? 'bg-[var(--bg-selected)]'
           : 'hover:bg-[var(--bg-hover)] active:bg-[var(--bg-active)]'
@@ -162,14 +161,14 @@ export function ConversationItem(props: ConversationItemProps) {
         {/* User/Group Info */}
         <div className="flex-1 min-w-0 flex flex-col gap-0.5">
           {/* Name Row */}
-          {/* Unread: bold name, Read: medium weight */}
+          {/* Unread: bold name, Read: semibold */}
           <div className="flex items-center gap-1">
             <span className={`text-[15px] truncate max-w-[160px] ${
               isSelected
-                ? 'text-[var(--text-selected)] font-medium'
+                ? 'text-[var(--text-selected)] font-semibold'
                 : unreadCount > 0
-                  ? 'text-[var(--text-primary)] font-semibold'
-                  : 'text-[var(--text-primary)] font-medium'
+                  ? 'text-[var(--text-primary)] font-bold'
+                  : 'text-[var(--text-primary)] font-semibold'
             }`}>
               {name}
             </span>
@@ -177,13 +176,13 @@ export function ConversationItem(props: ConversationItemProps) {
           </div>
 
           {/* Preview Row - show subtitle for groups if no last message, otherwise show preview */}
-          {/* Unread: dark text + semibold, Read: gray text + normal weight */}
+          {/* Unread: dark text + semibold, Read: lighter text + normal weight */}
           <div className={`text-[14px] leading-[1.3] truncate ${
             isSelected
               ? 'text-[var(--text-selected-secondary)]'
               : unreadCount > 0
                 ? 'text-[var(--text-primary)] font-semibold'
-                : 'text-[var(--text-quaternary)]'
+                : 'text-[var(--text-secondary)]'
           }`}>
             {props.lastMessage ? formatPreview(props) : (subtitle || formatPreview(props))}
           </div>

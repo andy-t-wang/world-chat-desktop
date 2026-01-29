@@ -6,12 +6,12 @@
   --bg-primary: #ffffff;
   --bg-secondary: #F9FAFB;
   --bg-tertiary: #EAEAEA;
-  --bg-hover: #F2F2F7;
-  --bg-active: #E8E8ED;
-  --bg-selected: #007AFF;
+  --bg-hover: #E8E8ED;
+  --bg-active: #DCDCE0;
+  --bg-selected: #E5E5EA;
   --bg-sidebar: #F6F6F6;
-  --text-selected: #ffffff;
-  --text-selected-secondary: rgba(255, 255, 255, 0.9);
+  --text-selected: #181818;
+  --text-selected-secondary: #717680;
 
   /* Text */
   --text-primary: #181818;
@@ -76,7 +76,7 @@
   --bg-tertiary: #2D2D2F;
   --bg-hover: #343536;
   --bg-active: #3D3D3F;
-  --bg-selected: #1E3A5F;
+  --bg-selected: #3A3A3C;
   --bg-sidebar: #2D2D2D;
   --text-selected: #D7DADC;
   --text-selected-secondary: #818384;

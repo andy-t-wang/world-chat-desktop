@@ -968,8 +968,8 @@ async function createWindow() {
   mainWindow = new BrowserWindow({
     width: 980,
     height: 655,
-    minWidth: 700,
-    minHeight: 500,
+    minWidth: 900,
+    minHeight: 600,
     center: true, // Center window on screen like Signal
     // macOS-specific title bar styling
     ...(isMac && {

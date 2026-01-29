@@ -175,25 +175,31 @@ export function ConversationList({
     return [...pinned, ...unpinned];
   }, [conversationIds, metadata, searchQuery, usernameCacheVersion, hideEmptyConversations, pinnedIds, customNicknames]);
 
-  // Format timestamp for display using user's locale
+  // Format timestamp for display - relative for today, then Yesterday, then date
   const formatTimestamp = (ns: bigint): string => {
     if (ns === BigInt(0)) return '';
     const date = new Date(Number(ns / BigInt(1_000_000)));
     const now = new Date();
-    const isToday = date.toDateString() === now.toDateString();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
 
-    if (isToday) {
-      // Use user's locale for time format (12h vs 24h based on locale)
-      return date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+    // Under 1 day: show relative time (e.g., "5m", "2h")
+    if (diffMins < 60) {
+      return diffMins < 1 ? 'now' : `${diffMins}m`;
+    }
+    if (diffHours < 24 && date.toDateString() === now.toDateString()) {
+      return `${diffHours}h`;
     }
 
+    // Yesterday
     const yesterday = new Date(now);
     yesterday.setDate(yesterday.getDate() - 1);
     if (date.toDateString() === yesterday.toDateString()) {
       return 'Yesterday';
     }
 
-    // Use user's locale for date format
+    // Older: show date
     return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
   };
 
@@ -264,7 +270,7 @@ export function ConversationList({
   if (!isLoading && conversationIds.length === 0 && requestCount > 0) {
     return (
       <div className="flex flex-col h-full">
-        <div className="shrink-0 border-b border-[var(--border-subtle)]">
+        <div className="shrink-0 border-b border-[var(--border-subtle)] pl-2 pr-1">
           <ChatRequestsBanner count={requestCount} newCount={newRequestCount} onClick={onRequestsClick} />
         </div>
         <div className="flex-1 flex flex-col items-center justify-center px-6 text-center">
@@ -300,7 +306,7 @@ export function ConversationList({
 
       {/* Chat Requests Banner */}
       {requestCount > 0 && (
-        <div className="shrink-0 border-b border-[var(--border-subtle)]">
+        <div className="shrink-0 border-b border-[var(--border-subtle)] pl-2 pr-1">
           <ChatRequestsBanner count={requestCount} newCount={newRequestCount} onClick={onRequestsClick} />
         </div>
       )}
@@ -308,7 +314,7 @@ export function ConversationList({
       {/* Virtualized Conversation List */}
       <div
         ref={parentRef}
-        className="flex-1 overflow-auto scrollbar-auto-hide"
+        className="flex-1 overflow-auto scrollbar-auto-hide pl-2 pr-1"
       >
         <div
           style={{

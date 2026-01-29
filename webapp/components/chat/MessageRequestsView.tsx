@@ -168,26 +168,31 @@ export function MessageRequestsView({ onBack }: MessageRequestsViewProps) {
     }
   }, [selectedIds, isProcessing, exitSelectMode]);
 
-  // Format timestamp for display
+  // Format timestamp for display - relative for today, then Yesterday, then date
   const formatTimestamp = (ns: bigint): string => {
     if (ns === BigInt(0)) return "";
     const date = new Date(Number(ns / BigInt(1_000_000)));
     const now = new Date();
-    const isToday = date.toDateString() === now.toDateString();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
 
-    if (isToday) {
-      return date.toLocaleTimeString(undefined, {
-        hour: "numeric",
-        minute: "2-digit",
-      });
+    // Under 1 day: show relative time (e.g., "5m", "2h")
+    if (diffMins < 60) {
+      return diffMins < 1 ? "now" : `${diffMins}m`;
+    }
+    if (diffHours < 24 && date.toDateString() === now.toDateString()) {
+      return `${diffHours}h`;
     }
 
+    // Yesterday
     const yesterday = new Date(now);
     yesterday.setDate(yesterday.getDate() - 1);
     if (date.toDateString() === yesterday.toDateString()) {
       return "Yesterday";
     }
 
+    // Older: show date
     return date.toLocaleDateString(undefined, {
       month: "short",
       day: "numeric",
@@ -367,7 +372,7 @@ export function MessageRequestsView({ onBack }: MessageRequestsViewProps) {
       {filteredIds.length > 0 && (
         <div
           ref={parentRef}
-          className="flex-1 overflow-auto scrollbar-auto-hide"
+          className="flex-1 overflow-auto scrollbar-auto-hide pl-2 pr-1"
         >
           <div
             style={{

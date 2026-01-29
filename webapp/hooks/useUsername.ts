@@ -42,6 +42,14 @@ function truncateAddress(address: string): string {
 }
 
 /**
+ * Capitalize the first letter of a string
+ */
+function capitalizeFirst(str: string): string {
+  if (!str) return str;
+  return str.charAt(0).toUpperCase() + str.slice(1);
+}
+
+/**
  * Hook to get username data for a single address
  *
  * Uses a simple pattern:
@@ -132,7 +140,7 @@ export function useUsername(address: string | null | undefined): UseUsernameResu
     record: state.record,
     isLoading: state.isLoading,
     error: state.error,
-    displayName: state.record?.username ?? (address ? truncateAddress(address) : ''),
+    displayName: capitalizeFirst(state.record?.username ?? (address ? truncateAddress(address) : '')),
     profilePicture: state.record?.minimized_profile_picture_url ?? state.record?.profile_picture_url ?? null,
   };
 }
@@ -141,5 +149,5 @@ export function useUsername(address: string | null | undefined): UseUsernameResu
  * Get display name from a username record or address
  */
 export function getDisplayName(record: UsernameRecord | null, address: string): string {
-  return record?.username ?? truncateAddress(address);
+  return capitalizeFirst(record?.username ?? truncateAddress(address));
 }

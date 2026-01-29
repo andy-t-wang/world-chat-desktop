@@ -39,32 +39,32 @@ export function ReplyBubble({
 }: ReplyBubbleProps) {
   const { displayName } = useUsername(quotedSenderAddress);
 
-  // Dynamic border radius based on position in group
+  // Dynamic border radius based on position in group (matching regular bubbles)
   const getReplyRadius = () => {
     if (isOwnMessage) {
       // Outgoing: rounded except bottom-right for last, all rounded for first
       if (isFirstInGroup && isLastInGroup) {
-        return 'rounded-tl-[16px] rounded-tr-[16px] rounded-bl-[16px] rounded-br-[4px]';
+        return 'rounded-tl-[18px] rounded-tr-[18px] rounded-bl-[18px] rounded-br-[6px]';
       }
       if (isFirstInGroup) {
-        return 'rounded-tl-[16px] rounded-tr-[16px] rounded-bl-[16px] rounded-br-[16px]';
+        return 'rounded-[18px]';
       }
       if (isLastInGroup) {
-        return 'rounded-tl-[16px] rounded-tr-[16px] rounded-bl-[16px] rounded-br-[4px]';
+        return 'rounded-tl-[18px] rounded-tr-[18px] rounded-bl-[18px] rounded-br-[6px]';
       }
-      return 'rounded-[16px]';
+      return 'rounded-[18px]';
     } else {
       // Incoming: rounded except bottom-left for last
       if (isFirstInGroup && isLastInGroup) {
-        return 'rounded-tl-[16px] rounded-tr-[16px] rounded-bl-[4px] rounded-br-[16px]';
+        return 'rounded-tl-[18px] rounded-tr-[18px] rounded-bl-[6px] rounded-br-[18px]';
       }
       if (isFirstInGroup) {
-        return 'rounded-[16px]';
+        return 'rounded-[18px]';
       }
       if (isLastInGroup) {
-        return 'rounded-tl-[16px] rounded-tr-[16px] rounded-bl-[4px] rounded-br-[16px]';
+        return 'rounded-tl-[18px] rounded-tr-[18px] rounded-bl-[6px] rounded-br-[18px]';
       }
-      return 'rounded-[16px]';
+      return 'rounded-[18px]';
     }
   };
 
@@ -87,8 +87,8 @@ export function ReplyBubble({
       {/* Quoted message with connector bar */}
       <div className={`flex gap-2 items-stretch ${isOwnMessage ? 'flex-row' : 'flex-row-reverse'}`}>
         {/* Quoted message bubble */}
-        <div className="max-w-[300px] px-3 py-[7px] bg-[var(--bg-secondary)] rounded-[16px]">
-          <p className="text-[15px] text-[var(--text-tertiary)] leading-[1.3] line-clamp-2 break-words">
+        <div className="max-w-[300px] px-3 py-[7px] bg-[var(--bg-secondary)] rounded-[18px]">
+          <p className="text-[16px] text-[var(--text-tertiary)] leading-[1.4] line-clamp-2 break-words">
             {quotedContent}
           </p>
         </div>
@@ -98,13 +98,13 @@ export function ReplyBubble({
 
       {/* Reply message bubble */}
       <div className={`max-w-[300px] px-3 py-[7px] ${bubbleBg} ${getReplyRadius()}`}>
-        <p className={`text-[15px] leading-[1.3] break-words ${textColor} ${isOwnMessage ? 'opacity-90' : ''}`}>
+        <p className={`text-[16px] leading-[1.4] break-words ${textColor} ${isOwnMessage ? 'opacity-90' : ''}`}>
           {replyContent}
         </p>
         {/* Show translation for incoming messages */}
         {translatedContent && !isOwnMessage && (
           <div className="mt-1.5 pt-1.5 border-t border-[rgba(0,0,0,0.08)]">
-            <p className="text-[15px] text-[var(--text-secondary)] italic leading-[1.4]">
+            <p className="text-[16px] text-[var(--text-secondary)] italic leading-[1.4]">
               {translatedContent}
             </p>
           </div>
@@ -112,7 +112,7 @@ export function ReplyBubble({
         {/* Show original text for outgoing translated messages */}
         {originalText && isOwnMessage && (
           <div className="mt-1.5 pt-1.5 border-t border-white/20">
-            <p className="text-[15px] text-white/70 italic leading-[1.4]">
+            <p className="text-[16px] text-white/70 italic leading-[1.4]">
               {originalText}
             </p>
           </div>
