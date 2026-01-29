@@ -4,8 +4,8 @@ import Image from "next/image";
 import { Download, Apple, Monitor, ChevronDown } from "lucide-react";
 import { useEffect, useState } from "react";
 
-const GITHUB_RELEASE_URL =
-  "https://api.github.com/repos/andy-t-wang/world-chat-desktop/releases/latest";
+const GITHUB_RELEASES_URL =
+  "https://api.github.com/repos/andy-t-wang/world-chat-desktop/releases";
 
 interface ReleaseAsset {
   name: string;
@@ -16,6 +16,8 @@ interface ReleaseAsset {
 interface Release {
   tag_name: string;
   assets: ReleaseAsset[];
+  draft: boolean;
+  prerelease: boolean;
 }
 
 type Platform = "mac-arm64" | "mac-x64" | "windows" | "linux" | "unknown";
@@ -26,6 +28,7 @@ interface DownloadOption {
   sublabel: string;
   icon: "apple" | "windows" | "linux";
   asset: ReleaseAsset | null;
+  version: string;
   requirements: string;
 }
 
@@ -106,6 +109,27 @@ function getAssetForPlatform(
   }
 }
 
+// Find the best available asset across multiple releases
+// Returns the asset from the most recent release that has it
+function findBestAssetForPlatform(
+  releases: Release[],
+  platform: Platform,
+): { asset: ReleaseAsset; version: string } | null {
+  for (const release of releases) {
+    // Skip drafts and prereleases
+    if (release.draft || release.prerelease) continue;
+
+    const asset = getAssetForPlatform(release.assets, platform);
+    if (asset) {
+      return {
+        asset,
+        version: release.tag_name.replace("v", ""),
+      };
+    }
+  }
+  return null;
+}
+
 function PlatformIcon({
   type,
   className,
@@ -134,9 +158,11 @@ function PlatformIcon({
 function DownloadButton({
   option,
   primary = false,
+  showVersion = false,
 }: {
   option: DownloadOption;
   primary?: boolean;
+  showVersion?: boolean;
 }) {
   if (!option.asset) {
     return null;
@@ -163,6 +189,7 @@ function DownloadButton({
           }`}
         >
           {formatSize(option.asset.size)} · {option.sublabel}
+          {showVersion && option.version && ` · v${option.version}`}
         </span>
       </div>
       <Download className={`w-4 h-4 ${primary ? "" : "opacity-60"}`} />
@@ -171,7 +198,7 @@ function DownloadButton({
 }
 
 export default function DownloadPage() {
-  const [release, setRelease] = useState<Release | null>(null);
+  const [releases, setReleases] = useState<Release[]>([]);
   const [loading, setLoading] = useState(true);
   const [detectedPlatform, setDetectedPlatform] = useState<Platform>("unknown");
   const [showAllDownloads, setShowAllDownloads] = useState(false);
@@ -180,11 +207,11 @@ export default function DownloadPage() {
     // Detect platform
     setDetectedPlatform(detectPlatform());
 
-    // Fetch release info
-    fetch(GITHUB_RELEASE_URL)
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data) => {
-        setRelease(data);
+    // Fetch releases (get last 10 to find available assets)
+    fetch(`${GITHUB_RELEASES_URL}?per_page=10`)
+      .then((res) => (res.ok ? res.json() : []))
+      .then((data: Release[]) => {
+        setReleases(data);
         setLoading(false);
       })
       .catch(() => {
@@ -192,8 +219,11 @@ export default function DownloadPage() {
       });
   }, []);
 
-  const version = release?.tag_name?.replace("v", "") || "";
-  const assets = release?.assets || [];
+  // Find best available assets across all releases
+  const macArm64 = findBestAssetForPlatform(releases, "mac-arm64");
+  const macX64 = findBestAssetForPlatform(releases, "mac-x64");
+  const windows = findBestAssetForPlatform(releases, "windows");
+  const linux = findBestAssetForPlatform(releases, "linux");
 
   // Build download options
   const downloadOptions: DownloadOption[] = [
@@ -202,7 +232,8 @@ export default function DownloadPage() {
       label: "Download for Mac",
       sublabel: "Apple Silicon (M-series)",
       icon: "apple",
-      asset: getAssetForPlatform(assets, "mac-arm64"),
+      asset: macArm64?.asset || null,
+      version: macArm64?.version || "",
       requirements: "Requires macOS 11 Big Sur or later",
     },
     {
@@ -210,7 +241,8 @@ export default function DownloadPage() {
       label: "Download for Mac",
       sublabel: "Intel",
       icon: "apple",
-      asset: getAssetForPlatform(assets, "mac-x64"),
+      asset: macX64?.asset || null,
+      version: macX64?.version || "",
       requirements: "Requires macOS 11 Big Sur or later",
     },
     {
@@ -218,7 +250,8 @@ export default function DownloadPage() {
       label: "Download for Windows",
       sublabel: "Windows 10/11 (64-bit)",
       icon: "windows",
-      asset: getAssetForPlatform(assets, "windows"),
+      asset: windows?.asset || null,
+      version: windows?.version || "",
       requirements: "Requires Windows 10 or later",
     },
     {
@@ -226,7 +259,8 @@ export default function DownloadPage() {
       label: "Download for Linux",
       sublabel: "AppImage (64-bit)",
       icon: "linux",
-      asset: getAssetForPlatform(assets, "linux"),
+      asset: linux?.asset || null,
+      version: linux?.version || "",
       requirements: "Most Linux distributions",
     },
   ];
@@ -282,8 +316,8 @@ export default function DownloadPage() {
         </h1>
 
         {/* Version */}
-        {version && (
-          <p className="text-[15px] text-[#86868B] mb-8">Version {version}</p>
+        {recommendedOption.version && (
+          <p className="text-[15px] text-[#86868B] mb-8">Version {recommendedOption.version}</p>
         )}
 
         {/* Primary download button */}
@@ -315,7 +349,11 @@ export default function DownloadPage() {
                 {showAllDownloads && (
                   <div className="mt-4 space-y-2">
                     {otherOptions.map((option) => (
-                      <DownloadButton key={option.platform} option={option} />
+                      <DownloadButton
+                        key={option.platform}
+                        option={option}
+                        showVersion={option.version !== recommendedOption.version}
+                      />
                     ))}
                   </div>
                 )}
