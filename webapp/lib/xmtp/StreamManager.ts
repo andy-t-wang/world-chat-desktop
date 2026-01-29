@@ -1762,13 +1762,13 @@ class XMTPStreamManager {
           }
 
           // Check for existing DM with same peer address
-          if (metadata.conversationType === 'dm') {
-            const existingDm = this.findExistingDmByPeerAddress(metadata.peerAddress);
+          if (newMetadata.conversationType === 'dm') {
+            const existingDm = this.findExistingDmByPeerAddress(newMetadata.peerAddress);
             if (existingDm && existingDm.convId !== conv.id) {
               console.warn('[StreamManager] DUPLICATE DM detected in stream!', {
                 newConvId: conv.id,
                 existingConvId: existingDm.convId,
-                peerAddress: metadata.peerAddress,
+                peerAddress: newMetadata.peerAddress,
               });
             }
           }
@@ -1779,12 +1779,12 @@ class XMTPStreamManager {
           const selectedId = store.get(selectedConversationIdAtom);
           const hasValidConsent = consentState === ConsentState.Allowed || consentState === ConsentState.Unknown;
           const shouldShow = hasValidConsent &&
-            (metadata.lastMessagePreview || conv.id === selectedId);
+            (newMetadata.lastMessagePreview || conv.id === selectedId);
 
           console.log('[StreamManager] Conversation stream decision:', {
             id: conv.id,
             hasValidConsent,
-            lastMessagePreview: metadata.lastMessagePreview?.slice(0, 50),
+            lastMessagePreview: newMetadata.lastMessagePreview?.slice(0, 50),
             isSelected: conv.id === selectedId,
             shouldShow,
             isNewConversation,
