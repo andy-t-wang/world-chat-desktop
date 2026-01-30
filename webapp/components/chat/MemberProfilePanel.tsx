@@ -195,7 +195,7 @@ export function MemberProfilePanel({
           <button
             onClick={() => setView("profile")}
             disabled={isUpdatingDisappearing}
-            className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-[var(--bg-hover)] transition-colors disabled:opacity-50"
+            className="electron-no-drag w-8 h-8 flex items-center justify-center rounded-full hover:bg-[var(--bg-hover)] transition-colors disabled:opacity-50"
           >
             <ArrowLeft className="w-5 h-5 text-[var(--text-primary)]" />
           </button>
@@ -239,7 +239,7 @@ export function MemberProfilePanel({
         </span>
         <button
           onClick={onClose}
-          className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-[var(--bg-hover)] transition-colors"
+          className="electron-no-drag w-8 h-8 flex items-center justify-center rounded-full hover:bg-[var(--bg-hover)] transition-colors"
         >
           <X className="w-5 h-5 text-[var(--text-quaternary)]" />
         </button>

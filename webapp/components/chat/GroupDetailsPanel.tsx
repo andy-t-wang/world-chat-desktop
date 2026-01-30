@@ -489,7 +489,7 @@ export function GroupDetailsPanel({
         <span className="text-[17px] font-semibold text-[var(--text-primary)]">Group Info</span>
         <button
           onClick={onClose}
-          className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-[var(--bg-hover)] transition-colors"
+          className="electron-no-drag w-8 h-8 flex items-center justify-center rounded-full hover:bg-[var(--bg-hover)] transition-colors"
         >
           <X className="w-5 h-5 text-[var(--text-quaternary)]" />
         </button>

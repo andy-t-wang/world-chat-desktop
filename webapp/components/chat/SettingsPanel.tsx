@@ -303,7 +303,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
       <div className="shrink-0 flex items-center gap-3 px-4 py-3 border-b border-[var(--border-default)]">
         <button
           onClick={onClose}
-          className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-[var(--bg-hover)] transition-colors"
+          className="electron-no-drag w-8 h-8 flex items-center justify-center rounded-lg hover:bg-[var(--bg-hover)] transition-colors"
         >
           <ArrowLeft className="w-5 h-5 text-[var(--text-secondary)]" />
         </button>
