@@ -6,13 +6,18 @@ import { useAtomValue, useSetAtom, useAtom } from 'jotai';
 import { ConversationItem, type ConversationItemProps } from './ConversationItem';
 import { ChatRequestsBanner } from './ChatRequestsBanner';
 import { selectedConversationIdAtom } from '@/stores/ui';
+import { xmtpClientAtom } from '@/stores/client';
 import { isSyncingConversationsAtom } from '@/stores/conversations';
 import { hideEmptyConversationsAtom, pinnedConversationIdsAtom, mutedConversationIdsAtom } from '@/stores/settings';
 import { customNicknamesAtom } from '@/stores/nicknames';
 import { VIRTUALIZATION } from '@/config/constants';
 import { useConversations } from '@/hooks/useConversations';
-import { Loader2, SearchX, Pin, PinOff, Bell, BellOff } from 'lucide-react';
-import { getCachedUsername } from '@/lib/username/service';
+import { Loader2, SearchX, Pin, PinOff, Bell, BellOff, MessageCirclePlus } from 'lucide-react';
+import { getCachedUsername, searchUsernames } from '@/lib/username/service';
+import { streamManager } from '@/lib/xmtp/StreamManager';
+import { Avatar } from '@/components/ui/Avatar';
+import { IdentifierKind, type Identifier } from '@xmtp/browser-sdk';
+import type { UsernameRecord } from '@/types/username';
 
 interface ConversationListProps {
   requestCount?: number;
@@ -32,6 +37,7 @@ export function ConversationList({
   const parentRef = useRef<HTMLDivElement>(null);
   const selectedId = useAtomValue(selectedConversationIdAtom);
   const setSelectedId = useSetAtom(selectedConversationIdAtom);
+  const client = useAtomValue(xmtpClientAtom);
   const hideEmptyConversations = useAtomValue(hideEmptyConversationsAtom);
   const isSyncing = useAtomValue(isSyncingConversationsAtom);
   const customNicknames = useAtomValue(customNicknamesAtom);
@@ -44,6 +50,12 @@ export function ConversationList({
     y: number;
     conversationId: string;
   } | null>(null);
+
+  // Username search state for "Start new conversation" section
+  const [usernameSearchResults, setUsernameSearchResults] = useState<UsernameRecord[]>([]);
+  const [isSearchingUsernames, setIsSearchingUsernames] = useState(false);
+  const [creatingConversationWith, setCreatingConversationWith] = useState<string | null>(null);
+  const searchDebounceRef = useRef<NodeJS.Timeout | null>(null);
 
   // Use conversations hook - it handles all loading and provides metadata
   const { conversationIds, metadata, isLoading } = useConversations();
@@ -109,6 +121,87 @@ export function ConversationList({
     }, 500);
     return () => clearInterval(interval);
   }, [searchQuery]);
+
+  // Search usernames API when query changes (debounced)
+  useEffect(() => {
+    // Clear previous timeout
+    if (searchDebounceRef.current) {
+      clearTimeout(searchDebounceRef.current);
+    }
+
+    // Clear results if query is empty or too short
+    if (!searchQuery.trim() || searchQuery.trim().length < 2) {
+      setUsernameSearchResults([]);
+      setIsSearchingUsernames(false);
+      return;
+    }
+
+    // Debounce the search
+    setIsSearchingUsernames(true);
+    searchDebounceRef.current = setTimeout(async () => {
+      try {
+        const results = await searchUsernames(searchQuery.trim());
+        setUsernameSearchResults(results);
+      } catch (error) {
+        console.error('Failed to search usernames:', error);
+        setUsernameSearchResults([]);
+      } finally {
+        setIsSearchingUsernames(false);
+      }
+    }, 300);
+
+    return () => {
+      if (searchDebounceRef.current) {
+        clearTimeout(searchDebounceRef.current);
+      }
+    };
+  }, [searchQuery]);
+
+  // Get addresses that already have conversations
+  const existingPeerAddresses = useMemo(() => {
+    const addresses = new Set<string>();
+    for (const [, data] of metadata) {
+      if (data.peerAddress) {
+        addresses.add(data.peerAddress.toLowerCase());
+      }
+    }
+    return addresses;
+  }, [metadata]);
+
+  // Filter username search results to exclude existing conversations
+  const newConversationResults = useMemo(() => {
+    if (!searchQuery.trim()) return [];
+    return usernameSearchResults.filter(
+      result => !existingPeerAddresses.has(result.address.toLowerCase())
+    );
+  }, [usernameSearchResults, existingPeerAddresses, searchQuery]);
+
+  // Handle starting a new conversation from search results
+  const handleStartConversation = useCallback(async (result: UsernameRecord) => {
+    if (!client || creatingConversationWith) return;
+
+    setCreatingConversationWith(result.address);
+
+    try {
+      const identifier: Identifier = {
+        identifier: result.address.toLowerCase(),
+        identifierKind: IdentifierKind.Ethereum,
+      };
+
+      // Create or find existing DM
+      const conversation = await client.conversations.createDmWithIdentifier(identifier);
+
+      // Register with StreamManager
+      await streamManager.registerNewConversation(conversation);
+
+      // Select the conversation
+      setSelectedId(conversation.id);
+    } catch (error) {
+      console.error('Failed to create conversation:', error);
+    } finally {
+      setCreatingConversationWith(null);
+    }
+  }, [client, creatingConversationWith, setSelectedId]);
 
   // Filter conversations based on search query, consent state, and empty state
   // Main list only shows Allowed conversations (Unknown go to requests)
@@ -281,13 +374,54 @@ export function ConversationList({
     );
   }
 
-  // Show no search results state
-  if (searchQuery && filteredIds.length === 0) {
+  // Show no search results state - but still show username search results if available
+  if (searchQuery && filteredIds.length === 0 && newConversationResults.length === 0 && !isSearchingUsernames) {
     return (
       <div className="flex flex-col h-full items-center justify-center px-6 text-center">
         <SearchX className="w-10 h-10 text-[var(--text-tertiary)] mb-3" />
         <p className="text-[var(--text-secondary)]">No results found</p>
         <p className="text-sm text-[var(--text-tertiary)] mt-1">Try a different search term</p>
+      </div>
+    );
+  }
+
+  // Show only new conversation results when no existing conversations match
+  if (searchQuery && filteredIds.length === 0 && (newConversationResults.length > 0 || isSearchingUsernames)) {
+    return (
+      <div className="relative flex flex-col h-full">
+        <div className="flex-1 overflow-auto scrollbar-auto-hide">
+          {/* Start new conversation section */}
+          <div className="px-4 py-2 border-b border-[var(--border-subtle)]">
+            <div className="flex items-center gap-2 text-[var(--text-tertiary)]">
+              <MessageCirclePlus className="w-4 h-4" />
+              <span className="text-[12px] font-medium uppercase tracking-wide">Start new conversation</span>
+              {isSearchingUsernames && <Loader2 className="w-3 h-3 animate-spin" />}
+            </div>
+          </div>
+          {newConversationResults.map((result) => (
+            <button
+              key={result.address}
+              onClick={() => handleStartConversation(result)}
+              disabled={creatingConversationWith === result.address}
+              className="w-full flex items-center gap-3 px-4 py-3 hover:bg-[var(--bg-hover)] transition-colors disabled:opacity-50"
+            >
+              <Avatar address={result.address} size="sm" />
+              <div className="flex-1 text-left min-w-0">
+                <p className="font-medium text-[var(--text-primary)] truncate">
+                  {result.username || `${result.address.slice(0, 6)}...${result.address.slice(-4)}`}
+                </p>
+                {result.username && (
+                  <p className="text-sm text-[var(--text-tertiary)] truncate font-mono">
+                    {result.address.slice(0, 6)}...{result.address.slice(-4)}
+                  </p>
+                )}
+              </div>
+              {creatingConversationWith === result.address && (
+                <Loader2 className="w-4 h-4 animate-spin text-[var(--accent-blue)]" />
+              )}
+            </button>
+          ))}
+        </div>
       </div>
     );
   }
@@ -372,6 +506,42 @@ export function ConversationList({
             );
           })}
         </div>
+
+        {/* Start new conversation section - shown when searching and there are results not in existing conversations */}
+        {searchQuery && (newConversationResults.length > 0 || isSearchingUsernames) && (
+          <div className="mt-2">
+            <div className="px-4 py-2 border-t border-[var(--border-subtle)]">
+              <div className="flex items-center gap-2 text-[var(--text-tertiary)]">
+                <MessageCirclePlus className="w-4 h-4" />
+                <span className="text-[12px] font-medium uppercase tracking-wide">Start new conversation</span>
+                {isSearchingUsernames && <Loader2 className="w-3 h-3 animate-spin" />}
+              </div>
+            </div>
+            {newConversationResults.map((result) => (
+              <button
+                key={result.address}
+                onClick={() => handleStartConversation(result)}
+                disabled={creatingConversationWith === result.address}
+                className="w-full flex items-center gap-3 px-4 py-3 hover:bg-[var(--bg-hover)] transition-colors disabled:opacity-50"
+              >
+                <Avatar address={result.address} size="sm" />
+                <div className="flex-1 text-left min-w-0">
+                  <p className="font-medium text-[var(--text-primary)] truncate">
+                    {result.username || `${result.address.slice(0, 6)}...${result.address.slice(-4)}`}
+                  </p>
+                  {result.username && (
+                    <p className="text-sm text-[var(--text-tertiary)] truncate font-mono">
+                      {result.address.slice(0, 6)}...{result.address.slice(-4)}
+                    </p>
+                  )}
+                </div>
+                {creatingConversationWith === result.address && (
+                  <Loader2 className="w-4 h-4 animate-spin text-[var(--accent-blue)]" />
+                )}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Context Menu */}
