@@ -154,6 +154,7 @@ body {
   overflow-y: auto;
   scrollbar-width: thin;
   scrollbar-color: transparent transparent;
+  scrollbar-gutter: stable;
 }
 
 .scrollbar-auto-hide:hover,
