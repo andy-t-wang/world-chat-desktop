@@ -1049,11 +1049,14 @@ export function MessagePanel({
 
   // Scroll to bottom callback for reactions (reactions can shift content)
   const handleScrollToBottom = useCallback(() => {
-    setTimeout(() => {
-      if (parentRef.current) {
-        parentRef.current.scrollTop = parentRef.current.scrollHeight;
-      }
-    }, 0);
+    // Use double RAF to ensure layout is complete after content changes
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        if (parentRef.current) {
+          parentRef.current.scrollTop = parentRef.current.scrollHeight;
+        }
+      });
+    });
   }, []);
 
   // Handler for @mention clicks - opens the user's profile
@@ -2044,12 +2047,15 @@ export function MessagePanel({
     });
     setContextMenu(null);
     // Focus the input and scroll to bottom after reply preview appears
-    setTimeout(() => {
-      inputRef.current?.focus();
-      if (parentRef.current) {
-        parentRef.current.scrollTop = parentRef.current.scrollHeight;
-      }
-    }, 0);
+    // Use double RAF to ensure layout is complete after reply preview renders
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        inputRef.current?.focus();
+        if (parentRef.current) {
+          parentRef.current.scrollTop = parentRef.current.scrollHeight;
+        }
+      });
+    });
   }, [contextMenu, setReplyingTo]);
 
   // Handle quick reply from hover button
@@ -2079,13 +2085,15 @@ export function MessagePanel({
         senderAddress,
       });
       // Focus the input and scroll to bottom to keep messages visible
-      setTimeout(() => {
-        inputRef.current?.focus();
-        // Scroll to bottom after reply preview appears
-        if (parentRef.current) {
-          parentRef.current.scrollTop = parentRef.current.scrollHeight;
-        }
-      }, 0);
+      // Use double RAF to ensure layout is complete after reply preview renders
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          inputRef.current?.focus();
+          if (parentRef.current) {
+            parentRef.current.scrollTop = parentRef.current.scrollHeight;
+          }
+        });
+      });
     },
     [conversationType, peerAddress, memberPreviews, client?.inboxId, setReplyingTo, getMessageText]
   );
@@ -2125,11 +2133,14 @@ export function MessagePanel({
         );
 
         // Scroll to bottom after reaction is added (reactions can shift content)
-        setTimeout(() => {
-          if (parentRef.current) {
-            parentRef.current.scrollTop = parentRef.current.scrollHeight;
-          }
-        }, 0);
+        // Use double RAF to ensure layout is complete
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            if (parentRef.current) {
+              parentRef.current.scrollTop = parentRef.current.scrollHeight;
+            }
+          });
+        });
       } catch (error) {
         console.error("Failed to send reaction:", error);
       }
