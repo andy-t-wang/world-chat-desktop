@@ -152,36 +152,36 @@ export function PaymentRequestMessage({
     );
   }
 
-  // Recipient view - white card
+  // Recipient view - incoming bubble color
   const hasBottomContent = request.metadata.note || showProgress || hasCurrentUserPaid;
 
   return (
-    <div className="bg-white rounded-[20px] p-4 min-w-[200px] max-w-[280px]">
+    <div className="bg-[var(--bubble-incoming)] rounded-[20px] p-4 min-w-[200px] max-w-[280px]">
       {/* Header: Grey pill badge with token icon + Request */}
-      <div className="inline-flex items-center gap-1.5 bg-[#F3F4F5] rounded-full px-3 py-1.5 mb-3">
+      <div className="inline-flex items-center gap-1.5 bg-[var(--bg-tertiary)] rounded-full px-3 py-1.5 mb-3">
         <TokenIcon symbol={request.metadata.tokenSymbol} size="md" />
-        <span className="text-[13px] font-semibold text-[#181818]">
+        <span className="text-[13px] font-semibold text-[var(--text-primary)]">
           Request
         </span>
       </div>
 
       {/* Amount */}
       <div className={hasBottomContent ? "mb-1" : ""}>
-        <span className="text-[24px] font-semibold text-[#181818] leading-none tabular-nums">
+        <span className="text-[24px] font-semibold text-[var(--text-primary)] leading-none tabular-nums">
           {displayAmount}
         </span>
       </div>
 
       {/* Note */}
       {request.metadata.note && (
-        <p className="text-[15px] text-[#181818] leading-snug mt-1">
+        <p className="text-[15px] text-[var(--text-primary)] leading-snug mt-1">
           {request.metadata.note}
         </p>
       )}
 
       {/* Progress */}
       {showProgress && (
-        <p className="text-[15px] text-[#9BA1A6] mt-2">
+        <p className="text-[15px] text-[var(--text-secondary)] mt-2">
           {paidCount} of {totalRequested} paid
         </p>
       )}
@@ -248,27 +248,27 @@ export function PaymentFulfillmentMessage({
     );
   }
 
-  // Recipient view - white card (Received)
+  // Recipient view - incoming bubble color (Received)
   return (
-    <div className="bg-white rounded-[20px] p-4 min-w-[180px] max-w-[240px]">
+    <div className="bg-[var(--bubble-incoming)] rounded-[20px] p-4 min-w-[180px] max-w-[240px]">
       {/* Header: Grey pill badge with token icon + Received */}
-      <div className="inline-flex items-center gap-1.5 bg-[#F3F4F5] rounded-full px-3 py-1.5 mb-3">
+      <div className="inline-flex items-center gap-1.5 bg-[var(--bg-tertiary)] rounded-full px-3 py-1.5 mb-3">
         <TokenIcon symbol={fulfillment.metadata.tokenSymbol} size="md" />
-        <span className="text-[13px] font-semibold text-[#181818]">
+        <span className="text-[13px] font-semibold text-[var(--text-primary)]">
           Received
         </span>
       </div>
 
       {/* Amount */}
       <div className={isToCurrentUser ? "mb-1" : ""}>
-        <span className="text-[24px] font-semibold text-[#181818] leading-none tabular-nums">
+        <span className="text-[24px] font-semibold text-[var(--text-primary)] leading-none tabular-nums">
           {displayAmount}
         </span>
       </div>
 
       {/* To you indicator */}
       {isToCurrentUser && (
-        <p className="text-[15px] text-[#9BA1A6] mt-2">To you</p>
+        <p className="text-[15px] text-[var(--text-secondary)] mt-2">To you</p>
       )}
     </div>
   );
