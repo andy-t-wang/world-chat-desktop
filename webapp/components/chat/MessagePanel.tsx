@@ -2030,8 +2030,13 @@ export function MessagePanel({
       senderAddress: contextMenu.senderAddress,
     });
     setContextMenu(null);
-    // Focus the input after a brief delay to ensure UI has updated
-    setTimeout(() => inputRef.current?.focus(), 0);
+    // Focus the input and scroll to bottom after reply preview appears
+    setTimeout(() => {
+      inputRef.current?.focus();
+      if (parentRef.current) {
+        parentRef.current.scrollTop = parentRef.current.scrollHeight;
+      }
+    }, 0);
   }, [contextMenu, setReplyingTo]);
 
   // Handle quick reply from hover button
@@ -2060,8 +2065,14 @@ export function MessagePanel({
         content,
         senderAddress,
       });
-      // Focus the input
-      setTimeout(() => inputRef.current?.focus(), 0);
+      // Focus the input and scroll to bottom to keep messages visible
+      setTimeout(() => {
+        inputRef.current?.focus();
+        // Scroll to bottom after reply preview appears
+        if (parentRef.current) {
+          parentRef.current.scrollTop = parentRef.current.scrollHeight;
+        }
+      }, 0);
     },
     [conversationType, peerAddress, memberPreviews, client?.inboxId, setReplyingTo, getMessageText]
   );
