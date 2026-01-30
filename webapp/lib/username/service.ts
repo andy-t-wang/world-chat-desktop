@@ -55,7 +55,9 @@ function loadFromStorage(): void {
 
     for (const [address, entry] of Object.entries(data.entries)) {
       // Only load entries that haven't expired
-      if (now - entry.timestamp < USERNAME_API.CACHE_TTL_MS) {
+      // Use shorter TTL for null results
+      const ttl = entry.record ? USERNAME_API.CACHE_TTL_MS : USERNAME_API.NULL_CACHE_TTL_MS;
+      if (now - entry.timestamp < ttl) {
         usernameCache.set(address, entry);
       }
     }
@@ -80,9 +82,10 @@ function saveToStorage(): void {
       const entries: Record<string, CacheEntry> = {};
       const now = Date.now();
 
-      // Only save valid entries
+      // Only save valid entries (shorter TTL for null results)
       usernameCache.forEach((entry, address) => {
-        if (now - entry.timestamp < USERNAME_API.CACHE_TTL_MS) {
+        const ttl = entry.record ? USERNAME_API.CACHE_TTL_MS : USERNAME_API.NULL_CACHE_TTL_MS;
+        if (now - entry.timestamp < ttl) {
           entries[address] = entry;
         }
       });
@@ -108,9 +111,11 @@ function normalizeAddress(address: string): string {
 
 /**
  * Check if a cache entry is still valid
+ * Uses shorter TTL for null results so new usernames are found faster
  */
 function isCacheValid(entry: CacheEntry): boolean {
-  return Date.now() - entry.timestamp < USERNAME_API.CACHE_TTL_MS;
+  const ttl = entry.record ? USERNAME_API.CACHE_TTL_MS : USERNAME_API.NULL_CACHE_TTL_MS;
+  return Date.now() - entry.timestamp < ttl;
 }
 
 /**
@@ -233,12 +238,21 @@ export async function resolveAddresses(addresses: string[]): Promise<Map<string,
     }
 
     // Update cache and results for all queried addresses
+    // Only cache addresses that were explicitly returned by the API
+    // Don't cache null for missing addresses - they might have usernames
+    // that the batch API didn't return (rate limiting, timing, etc.)
     for (const address of uncachedAddresses) {
       const normalizedAddress = normalizeAddress(address);
-      const record = recordMap.get(normalizedAddress) ?? null;
+      const record = recordMap.get(normalizedAddress);
 
-      usernameCache.set(normalizedAddress, { record, timestamp: Date.now() });
-      results.set(normalizedAddress, record);
+      if (record) {
+        // Only cache successful lookups from batch
+        usernameCache.set(normalizedAddress, { record, timestamp: Date.now() });
+        results.set(normalizedAddress, record);
+      } else {
+        // Don't cache null - let individual fetch verify if user has no username
+        results.set(normalizedAddress, null);
+      }
     }
 
     // Persist to localStorage
@@ -246,7 +260,7 @@ export async function resolveAddresses(addresses: string[]): Promise<Map<string,
   } catch (error) {
     console.error('Failed to batch resolve addresses:', error);
 
-    // Mark all uncached addresses as null in results
+    // Don't cache errors - let them be retried
     for (const address of uncachedAddresses) {
       results.set(normalizeAddress(address), null);
     }

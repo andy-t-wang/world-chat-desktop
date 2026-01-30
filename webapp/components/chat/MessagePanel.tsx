@@ -657,6 +657,7 @@ interface MessageReactionsProps {
   memberPreviews?: MemberPreview[];
   peerAddress?: string;
   ownInboxId?: string;
+  onReactionToggle?: () => void;
 }
 
 function MessageReactions({
@@ -666,6 +667,7 @@ function MessageReactions({
   memberPreviews,
   peerAddress,
   ownInboxId,
+  onReactionToggle,
 }: MessageReactionsProps) {
   const _reactionsVersion = useAtomValue(reactionsVersionAtom);
   const reactions = streamManager.getReactions(messageId);
@@ -716,6 +718,8 @@ function MessageReactions({
         emoji,
         hasOwnReaction ? 'removed' : 'added'
       );
+      // Scroll after reaction toggle (reactions can shift content)
+      onReactionToggle?.();
     } catch (error) {
       console.error("Failed to toggle reaction:", error);
     }
@@ -1041,6 +1045,15 @@ export function MessagePanel({
         parentRef.current.scrollTop = scrollHeight;
       }
     }
+  }, []);
+
+  // Scroll to bottom callback for reactions (reactions can shift content)
+  const handleScrollToBottom = useCallback(() => {
+    setTimeout(() => {
+      if (parentRef.current) {
+        parentRef.current.scrollTop = parentRef.current.scrollHeight;
+      }
+    }, 0);
   }, []);
 
   // Handler for @mention clicks - opens the user's profile
@@ -2110,6 +2123,13 @@ export function MessagePanel({
           emoji,
           hasReaction ? 'removed' : 'added'
         );
+
+        // Scroll to bottom after reaction is added (reactions can shift content)
+        setTimeout(() => {
+          if (parentRef.current) {
+            parentRef.current.scrollTop = parentRef.current.scrollHeight;
+          }
+        }, 0);
       } catch (error) {
         console.error("Failed to send reaction:", error);
       }
@@ -2831,6 +2851,7 @@ export function MessagePanel({
                             memberPreviews={memberPreviews}
                             peerAddress={peerAddress}
                             ownInboxId={ownInboxId}
+                            onReactionToggle={handleScrollToBottom}
                           />
                           {isLastInGroup && (
                             <MessageTimestamp
@@ -3032,6 +3053,7 @@ export function MessagePanel({
                                     memberPreviews={memberPreviews}
                                     peerAddress={peerAddress}
                                     ownInboxId={ownInboxId}
+                                    onReactionToggle={handleScrollToBottom}
                                   />
                                 }
                               />
@@ -3123,6 +3145,7 @@ export function MessagePanel({
                                 memberPreviews={memberPreviews}
                                 peerAddress={peerAddress}
                                 ownInboxId={ownInboxId}
+                                onReactionToggle={handleScrollToBottom}
                               />
                             </div>
                           </MessageWrapper>
@@ -3208,6 +3231,7 @@ export function MessagePanel({
                               memberPreviews={memberPreviews}
                               peerAddress={peerAddress}
                               ownInboxId={ownInboxId}
+                              onReactionToggle={handleScrollToBottom}
                             />
                           </div>
                         </MessageWrapper>
@@ -3342,6 +3366,7 @@ export function MessagePanel({
                                 memberPreviews={memberPreviews}
                                 peerAddress={peerAddress}
                                 ownInboxId={ownInboxId}
+                                onReactionToggle={handleScrollToBottom}
                               />
                             </div>
                           </MessageWrapper>
@@ -3423,6 +3448,7 @@ export function MessagePanel({
                               memberPreviews={memberPreviews}
                               peerAddress={peerAddress}
                               ownInboxId={ownInboxId}
+                              onReactionToggle={handleScrollToBottom}
                             />
                           </div>
                         </MessageWrapper>
