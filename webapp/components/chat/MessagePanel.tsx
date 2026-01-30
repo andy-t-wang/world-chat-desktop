@@ -1078,6 +1078,11 @@ export function MessagePanel({
   // Reply state
   const [replyingTo, setReplyingTo] = useAtom(replyingToAtom);
 
+  // Clear reply state when switching conversations
+  useEffect(() => {
+    setReplyingTo(null);
+  }, [conversationId, setReplyingTo]);
+
   // Group leave state (used by parent via callback)
   const [isLeavingGroup, setIsLeavingGroup] = useState(false);
 
