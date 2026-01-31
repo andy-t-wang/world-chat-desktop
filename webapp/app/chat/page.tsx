@@ -283,8 +283,8 @@ export default function ChatPage() {
   if (isRestoring || clientState.isInitializing || !restorationAttempted) {
     return (
       <div className="flex w-full h-screen overflow-hidden">
-        {/* Skeleton Sidebar - full width on mobile */}
-        <div className="w-full md:w-[320px] lg:w-[380px] border-r border-[var(--border-default)] bg-[var(--bg-primary)] flex flex-col flex-shrink-0">
+        {/* Skeleton Sidebar - full width on mobile, no border */}
+        <div className="w-full md:w-[320px] lg:w-[380px] md:border-r md:border-[var(--border-default)] bg-[var(--bg-primary)] flex flex-col flex-shrink-0">
           {/* Electron drag region */}
           <div className="electron-drag h-8 shrink-0" />
           {/* Header skeleton */}

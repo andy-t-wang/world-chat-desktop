@@ -68,13 +68,21 @@ export function Sidebar({ onNewChat, className, width }: SidebarProps) {
     setDebouncedQuery('');
   };
 
+  // Determine if we should show border (only on md+ screens)
+  const sidebarClasses = `h-full bg-[var(--bg-sidebar)] md:border-r md:border-[var(--border-default)] flex flex-col shrink-0 w-full md:w-auto ${className || ''}`;
+
   // Show SettingsPanel when toggled
   if (showSettings) {
     return (
       <aside
-        className={`h-full bg-[var(--bg-sidebar)] border-r border-[var(--border-default)] flex flex-col shrink-0 ${className || ''}`}
-        style={{ width: width || 320 }}
+        className={sidebarClasses}
+        style={{ '--sidebar-width': `${width || 320}px` } as React.CSSProperties}
       >
+        <style jsx>{`
+          @media (min-width: 768px) {
+            aside { width: var(--sidebar-width) !important; }
+          }
+        `}</style>
         {/* Electron drag region */}
         <div className="electron-drag h-8 shrink-0" />
         <SettingsPanel onClose={() => setShowSettings(false)} />
@@ -86,9 +94,14 @@ export function Sidebar({ onNewChat, className, width }: SidebarProps) {
   if (showRequests) {
     return (
       <aside
-        className={`h-full bg-[var(--bg-sidebar)] border-r border-[var(--border-default)] flex flex-col shrink-0 ${className || ''}`}
-        style={{ width: width || 320 }}
+        className={sidebarClasses}
+        style={{ '--sidebar-width': `${width || 320}px` } as React.CSSProperties}
       >
+        <style jsx>{`
+          @media (min-width: 768px) {
+            aside { width: var(--sidebar-width) !important; }
+          }
+        `}</style>
         {/* Electron drag region */}
         <div className="electron-drag h-8 shrink-0" />
         <MessageRequestsView onBack={() => setShowRequests(false)} />
@@ -98,9 +111,14 @@ export function Sidebar({ onNewChat, className, width }: SidebarProps) {
 
   return (
     <aside
-      className={`h-full bg-[var(--bg-sidebar)] border-r border-[var(--border-default)] flex flex-col shrink-0 ${className || ''}`}
-      style={{ width: width || 320 }}
+      className={sidebarClasses}
+      style={{ '--sidebar-width': `${width || 320}px` } as React.CSSProperties}
     >
+      <style jsx>{`
+        @media (min-width: 768px) {
+          aside { width: var(--sidebar-width) !important; }
+        }
+      `}</style>
       {/* Electron drag region */}
       <div className="electron-drag h-8 shrink-0" />
       {/* Header */}
@@ -124,13 +142,7 @@ export function Sidebar({ onNewChat, className, width }: SidebarProps) {
             placeholder="Search"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="
-              w-full h-10 pl-9 pr-9
-              bg-[var(--bg-tertiary)] rounded-lg
-              text-sm text-[var(--text-primary)] placeholder-[var(--text-tertiary)]
-              outline-none focus:ring-2 focus:ring-[var(--accent-blue)]/20
-              transition-shadow
-            "
+            className="w-full h-10 pl-9 pr-9 bg-[var(--bg-tertiary)] rounded-lg text-sm text-[var(--text-primary)] placeholder-[var(--text-tertiary)] outline-none focus:ring-2 focus:ring-[var(--accent-blue)]/20 transition-shadow"
           />
           {searchQuery && (
             <button

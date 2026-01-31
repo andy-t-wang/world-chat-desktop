@@ -46,16 +46,24 @@ export function LinkPreview({ metadata, isLoading, isOwnMessage }: LinkPreviewPr
   const [imageError, setImageError] = useState(false);
   const [imageLoaded, setImageLoaded] = useState(false);
 
-  // Loading state
+  // Loading state - compact skeleton with shimmer
   if (isLoading || !metadata) {
-    const domain = metadata?.domain ?? 'Loading...';
+    const domain = metadata?.domain ?? '';
     return (
-      <div className="bg-[var(--bubble-incoming)] rounded-2xl overflow-hidden w-[340px]">
-        <div className="flex flex-col gap-2 items-center justify-center px-8 py-10">
-          <Loader2 className="w-5 h-5 text-[var(--text-tertiary)] animate-spin" />
-          <span className="text-[11px] text-[var(--text-tertiary)] truncate max-w-full">
-            {domain}
-          </span>
+      <div className="bg-[var(--bubble-incoming)] rounded-2xl overflow-hidden w-[280px]">
+        <div className="px-3 py-2.5">
+          {/* Skeleton title line */}
+          <div className="h-4 w-3/4 bg-[var(--bg-tertiary)] rounded animate-pulse mb-2" />
+          {/* Skeleton description line */}
+          <div className="h-3 w-full bg-[var(--bg-tertiary)] rounded animate-pulse mb-1.5" />
+          <div className="h-3 w-2/3 bg-[var(--bg-tertiary)] rounded animate-pulse mb-2" />
+          {/* Domain with spinner */}
+          <div className="flex items-center gap-1.5">
+            <Loader2 className="w-3 h-3 text-[var(--text-tertiary)] animate-spin" />
+            <span className="text-[11px] text-[var(--text-tertiary)]">
+              {domain || 'Loading preview...'}
+            </span>
+          </div>
         </div>
       </div>
     );

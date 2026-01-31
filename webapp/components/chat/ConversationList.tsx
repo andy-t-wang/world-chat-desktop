@@ -12,7 +12,7 @@ import { hideEmptyConversationsAtom, pinnedConversationIdsAtom, mutedConversatio
 import { customNicknamesAtom } from '@/stores/nicknames';
 import { VIRTUALIZATION } from '@/config/constants';
 import { useConversations } from '@/hooks/useConversations';
-import { Loader2, SearchX, Pin, PinOff, Bell, BellOff, MessageCirclePlus } from 'lucide-react';
+import { Loader2, SearchX, Pin, PinOff, Bell, BellOff, MessageCirclePlus, MessageSquare, Users } from 'lucide-react';
 import { getCachedUsername, searchUsernames } from '@/lib/username/service';
 import { streamManager } from '@/lib/xmtp/StreamManager';
 import { Avatar } from '@/components/ui/Avatar';
@@ -229,14 +229,29 @@ export function ConversationList({
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase().trim();
 
+      // Get addresses from username search results (for group member matching)
+      const searchedAddresses = new Set(
+        usernameSearchResults.map(r => r.address.toLowerCase())
+      );
+
       allowedIds = allowedIds.filter((id) => {
         const data = metadata.get(id);
         if (!data) return false;
 
-        // For groups, search by group name
+        // For groups, search by group name OR by member addresses matching searched usernames
         if (data.conversationType === 'group') {
           const groupName = data.groupName?.toLowerCase() ?? '';
-          return groupName.includes(query);
+          if (groupName.includes(query)) return true;
+
+          // Also show groups that contain any of the searched users
+          if (searchedAddresses.size > 0 && data.memberPreviews) {
+            for (const member of data.memberPreviews) {
+              if (searchedAddresses.has(member.address.toLowerCase())) {
+                return true;
+              }
+            }
+          }
+          return false;
         }
 
         // For DMs, search by nickname, username (from cache), or address
@@ -266,7 +281,25 @@ export function ConversationList({
     pinned.sort((a, b) => pinnedIds.indexOf(a) - pinnedIds.indexOf(b));
 
     return [...pinned, ...unpinned];
-  }, [conversationIds, metadata, searchQuery, usernameCacheVersion, hideEmptyConversations, pinnedIds, customNicknames]);
+  }, [conversationIds, metadata, searchQuery, usernameCacheVersion, hideEmptyConversations, pinnedIds, customNicknames, usernameSearchResults]);
+
+  // Split filtered results into DMs and Groups for sectioned search view
+  const { filteredDmIds, filteredGroupIds } = useMemo(() => {
+    if (!searchQuery.trim()) {
+      return { filteredDmIds: [], filteredGroupIds: [] };
+    }
+    const dms: string[] = [];
+    const groups: string[] = [];
+    for (const id of filteredIds) {
+      const data = metadata.get(id);
+      if (data?.conversationType === 'group') {
+        groups.push(id);
+      } else {
+        dms.push(id);
+      }
+    }
+    return { filteredDmIds: dms, filteredGroupIds: groups };
+  }, [filteredIds, metadata, searchQuery]);
 
   // Format timestamp for display - relative for today, then Yesterday, then date
   const formatTimestamp = (ns: bigint): string => {
@@ -385,42 +418,89 @@ export function ConversationList({
     );
   }
 
-  // Show only new conversation results when no existing conversations match
-  if (searchQuery && filteredIds.length === 0 && (newConversationResults.length > 0 || isSearchingUsernames)) {
+  // Show sectioned search results (DMs, Groups, New conversations)
+  if (searchQuery && (filteredIds.length > 0 || newConversationResults.length > 0 || isSearchingUsernames)) {
     return (
       <div className="relative flex flex-col h-full">
-        <div className="flex-1 overflow-auto scrollbar-auto-hide">
-          {/* Start new conversation section */}
-          <div className="px-4 py-2 border-b border-[var(--border-subtle)]">
-            <div className="flex items-center gap-2 text-[var(--text-tertiary)]">
-              <MessageCirclePlus className="w-4 h-4" />
-              <span className="text-[12px] font-medium uppercase tracking-wide">Start new conversation</span>
-              {isSearchingUsernames && <Loader2 className="w-3 h-3 animate-spin" />}
-            </div>
-          </div>
-          {newConversationResults.map((result) => (
-            <button
-              key={result.address}
-              onClick={() => handleStartConversation(result)}
-              disabled={creatingConversationWith === result.address}
-              className="w-full flex items-center gap-3 px-4 py-3 hover:bg-[var(--bg-hover)] transition-colors disabled:opacity-50"
-            >
-              <Avatar address={result.address} size="sm" />
-              <div className="flex-1 text-left min-w-0">
-                <p className="font-medium text-[var(--text-primary)] truncate">
-                  {result.username || `${result.address.slice(0, 6)}...${result.address.slice(-4)}`}
-                </p>
-                {result.username && (
-                  <p className="text-sm text-[var(--text-tertiary)] truncate font-mono">
-                    {result.address.slice(0, 6)}...{result.address.slice(-4)}
-                  </p>
-                )}
+        <div className="flex-1 overflow-auto scrollbar-auto-hide pl-2 pr-1">
+          {/* DMs Section */}
+          {filteredDmIds.length > 0 && (
+            <>
+              <div className="px-2 py-2">
+                <div className="flex items-center gap-2 text-[var(--text-tertiary)]">
+                  <MessageSquare className="w-4 h-4" />
+                  <span className="text-[12px] font-medium uppercase tracking-wide">Direct Messages</span>
+                </div>
               </div>
-              {creatingConversationWith === result.address && (
-                <Loader2 className="w-4 h-4 animate-spin text-[var(--accent-blue)]" />
-              )}
-            </button>
-          ))}
+              {filteredDmIds.map((id) => {
+                const props = getConversationProps(id);
+                if (!props) return null;
+                return (
+                  <div key={id} onContextMenu={(e) => handleContextMenu(e, id)}>
+                    <ConversationItem
+                      {...props}
+                      isSelected={selectedId === id}
+                      onClick={() => setSelectedId(id)}
+                    />
+                  </div>
+                );
+              })}
+            </>
+          )}
+
+          {/* Groups Section */}
+          {filteredGroupIds.length > 0 && (
+            <>
+              <div className={`px-2 py-2 ${filteredDmIds.length > 0 ? 'mt-2 border-t border-[var(--border-subtle)]' : ''}`}>
+                <div className="flex items-center gap-2 text-[var(--text-tertiary)]">
+                  <Users className="w-4 h-4" />
+                  <span className="text-[12px] font-medium uppercase tracking-wide">Groups</span>
+                </div>
+              </div>
+              {filteredGroupIds.map((id) => {
+                const props = getConversationProps(id);
+                if (!props) return null;
+                return (
+                  <div key={id} onContextMenu={(e) => handleContextMenu(e, id)}>
+                    <ConversationItem
+                      {...props}
+                      isSelected={selectedId === id}
+                      onClick={() => setSelectedId(id)}
+                    />
+                  </div>
+                );
+              })}
+            </>
+          )}
+
+          {/* New Conversations Section */}
+          {(newConversationResults.length > 0 || isSearchingUsernames) && (
+            <>
+              <div className={`px-2 py-2 ${filteredIds.length > 0 ? 'mt-2 border-t border-[var(--border-subtle)]' : ''}`}>
+                <div className="flex items-center gap-2 text-[var(--text-tertiary)]">
+                  <MessageCirclePlus className="w-4 h-4" />
+                  <span className="text-[12px] font-medium uppercase tracking-wide">Start new conversation</span>
+                  {isSearchingUsernames && <Loader2 className="w-3 h-3 animate-spin" />}
+                </div>
+              </div>
+              {newConversationResults.map((result) => (
+                <button
+                  key={result.address}
+                  onClick={() => handleStartConversation(result)}
+                  disabled={creatingConversationWith === result.address}
+                  className="w-full flex items-center gap-3 px-4 py-2.5 rounded-xl hover:bg-[var(--bg-hover)] transition-colors disabled:opacity-50"
+                >
+                  <Avatar address={result.address} size="sm" />
+                  <p className="flex-1 text-left font-medium text-[var(--text-primary)] truncate">
+                    {result.username || `${result.address.slice(0, 6)}...${result.address.slice(-4)}`}
+                  </p>
+                  {creatingConversationWith === result.address && (
+                    <Loader2 className="w-4 h-4 animate-spin text-[var(--accent-blue)]" />
+                  )}
+                </button>
+              ))}
+            </>
+          )}
         </div>
       </div>
     );
@@ -506,42 +586,6 @@ export function ConversationList({
             );
           })}
         </div>
-
-        {/* Start new conversation section - shown when searching and there are results not in existing conversations */}
-        {searchQuery && (newConversationResults.length > 0 || isSearchingUsernames) && (
-          <div className="mt-2">
-            <div className="px-4 py-2 border-t border-[var(--border-subtle)]">
-              <div className="flex items-center gap-2 text-[var(--text-tertiary)]">
-                <MessageCirclePlus className="w-4 h-4" />
-                <span className="text-[12px] font-medium uppercase tracking-wide">Start new conversation</span>
-                {isSearchingUsernames && <Loader2 className="w-3 h-3 animate-spin" />}
-              </div>
-            </div>
-            {newConversationResults.map((result) => (
-              <button
-                key={result.address}
-                onClick={() => handleStartConversation(result)}
-                disabled={creatingConversationWith === result.address}
-                className="w-full flex items-center gap-3 px-4 py-3 hover:bg-[var(--bg-hover)] transition-colors disabled:opacity-50"
-              >
-                <Avatar address={result.address} size="sm" />
-                <div className="flex-1 text-left min-w-0">
-                  <p className="font-medium text-[var(--text-primary)] truncate">
-                    {result.username || `${result.address.slice(0, 6)}...${result.address.slice(-4)}`}
-                  </p>
-                  {result.username && (
-                    <p className="text-sm text-[var(--text-tertiary)] truncate font-mono">
-                      {result.address.slice(0, 6)}...{result.address.slice(-4)}
-                    </p>
-                  )}
-                </div>
-                {creatingConversationWith === result.address && (
-                  <Loader2 className="w-4 h-4 animate-spin text-[var(--accent-blue)]" />
-                )}
-              </button>
-            ))}
-          </div>
-        )}
       </div>
 
       {/* Context Menu */}
