@@ -2182,7 +2182,7 @@ export function MessagePanel({
   }, [client, conversationType, conversationId, isLeavingGroup]);
 
   return (
-    <div className="flex-1 flex flex-col bg-[var(--bg-primary)] relative">
+    <div className="flex-1 flex flex-col bg-[var(--bg-primary)] relative overflow-hidden">
       {/* Header - draggable for Electron window */}
       <header className="electron-drag shrink-0 h-16 px-4 flex items-center justify-between border-b border-[var(--border-subtle)]">
         <div className="flex items-center gap-2">
