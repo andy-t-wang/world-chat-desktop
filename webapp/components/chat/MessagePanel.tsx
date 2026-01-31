@@ -2046,16 +2046,14 @@ export function MessagePanel({
       senderAddress: contextMenu.senderAddress,
     });
     setContextMenu(null);
-    // Focus the input and scroll to bottom after reply preview appears
-    // Use double RAF to ensure layout is complete after reply preview renders
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        inputRef.current?.focus();
-        if (parentRef.current) {
-          parentRef.current.scrollTop = parentRef.current.scrollHeight;
-        }
-      });
-    });
+    // Focus the input immediately
+    inputRef.current?.focus();
+    // Scroll to bottom after reply preview animation completes (200ms)
+    setTimeout(() => {
+      if (parentRef.current) {
+        parentRef.current.scrollTop = parentRef.current.scrollHeight;
+      }
+    }, 220);
   }, [contextMenu, setReplyingTo]);
 
   // Handle quick reply from hover button
@@ -2084,16 +2082,14 @@ export function MessagePanel({
         content,
         senderAddress,
       });
-      // Focus the input and scroll to bottom to keep messages visible
-      // Use double RAF to ensure layout is complete after reply preview renders
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          inputRef.current?.focus();
-          if (parentRef.current) {
-            parentRef.current.scrollTop = parentRef.current.scrollHeight;
-          }
-        });
-      });
+      // Focus the input immediately
+      inputRef.current?.focus();
+      // Scroll to bottom after reply preview animation completes (200ms)
+      setTimeout(() => {
+        if (parentRef.current) {
+          parentRef.current.scrollTop = parentRef.current.scrollHeight;
+        }
+      }, 220);
     },
     [conversationType, peerAddress, memberPreviews, client?.inboxId, setReplyingTo, getMessageText]
   );
