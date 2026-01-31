@@ -702,20 +702,20 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
             </button>
           </div>
         )}
-      </div>
 
-      {/* Footer - Logout Button */}
-      <div className="shrink-0 px-4 pt-3 pb-6 border-t border-[var(--border-default)]">
-        <button
-          onClick={() => setShowLogoutConfirm(true)}
-          disabled={isLoggingOut}
-          className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-500 transition-colors disabled:opacity-50"
-        >
-          <LogOut className="w-5 h-5" />
-          <span className="text-[14px] font-medium">
-            {isLoggingOut ? "Logging out..." : "Log Out"}
-          </span>
-        </button>
+        {/* Logout Button */}
+        <div className="px-4 pt-4 pb-8">
+          <button
+            onClick={() => setShowLogoutConfirm(true)}
+            disabled={isLoggingOut}
+            className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-500 transition-colors disabled:opacity-50"
+          >
+            <LogOut className="w-5 h-5" />
+            <span className="text-[14px] font-medium">
+              {isLoggingOut ? "Logging out..." : "Log Out"}
+            </span>
+          </button>
+        </div>
       </div>
 
       {/* Delete Translation Confirmation Dialog */}

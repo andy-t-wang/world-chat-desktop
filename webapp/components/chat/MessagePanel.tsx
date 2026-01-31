@@ -74,6 +74,7 @@ import { useMessages } from "@/hooks/useMessages";
 import { xmtpClientAtom } from "@/stores/client";
 import {
   readReceiptVersionAtom,
+  reactionsAtom,
   reactionsVersionAtom,
   messageCache,
 } from "@/stores/messages";
@@ -669,8 +670,8 @@ function MessageReactions({
   ownInboxId,
   onReactionToggle,
 }: MessageReactionsProps) {
-  const _reactionsVersion = useAtomValue(reactionsVersionAtom);
-  const reactions = streamManager.getReactions(messageId);
+  const allReactions = useAtomValue(reactionsAtom);
+  const reactions = allReactions.get(messageId) ?? [];
   const [reactionMenu, setReactionMenu] = useState<{
     emoji: string;
     reactors: Array<{ inboxId: string; address?: string; isYou?: boolean }>;
