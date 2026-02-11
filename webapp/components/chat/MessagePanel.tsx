@@ -170,6 +170,47 @@ interface MembershipChangeContent {
   metadataFieldChanges?: Array<{ fieldName: string; oldValue?: string; newValue?: string }>;
 }
 
+const REMOVE_MESSAGE_TYPE = "remove_message";
+const TOOLS_FOR_HUMANITY_AUTHORITY = "toolsforhumanity.com";
+const FALLBACK_DECODE_TYPE_IDS = new Set([
+  "text",
+  "reply",
+  "transactionreference",
+  "paymentrequest",
+  "paymentfulfillment",
+  "remoteattachment",
+  "remotestaticattachment",
+  "multiremoteattachment",
+  "multiremotestaticattachment",
+  "group_updated",
+  "membershipchange",
+]);
+
+function isRemoveMessageControlType(message: {
+  contentType?: { typeId?: string; authorityId?: string };
+}): boolean {
+  const typeId = message.contentType?.typeId?.toLowerCase();
+  if (!typeId) return false;
+
+  if (typeId === REMOVE_MESSAGE_TYPE || typeId === "removemessage") {
+    return true;
+  }
+
+  if (typeId.includes(REMOVE_MESSAGE_TYPE)) {
+    return true;
+  }
+
+  const authorityId = message.contentType?.authorityId?.toLowerCase();
+  return authorityId === TOOLS_FOR_HUMANITY_AUTHORITY &&
+    typeId.includes("remove") &&
+    typeId.includes("message");
+}
+
+function shouldAttemptFallbackDecode(typeId?: string): boolean {
+  if (!typeId) return true;
+  return FALLBACK_DECODE_TYPE_IDS.has(typeId.toLowerCase());
+}
+
 // Check if a message is an XMTP membership change message
 function isMembershipChangeMessage(message: {
   kind?: unknown;
@@ -1375,8 +1416,10 @@ export function MessagePanel({
 
   // Check if message should be displayed
   const shouldDisplayMessage = useCallback((msg: DecodedMessage): boolean => {
-    const typeId = (msg.contentType as { typeId?: string })?.typeId;
+    const contentType = msg.contentType as { typeId?: string; authorityId?: string } | undefined;
+    const typeId = contentType?.typeId;
     if (typeId === "readReceipt") return false;
+    if (isRemoveMessageControlType({ contentType })) return false;
     // Transaction references are displayed as payment cards
     if (typeId === "transactionReference") return true;
     // Payment requests and fulfillments are displayed as cards
@@ -1395,8 +1438,10 @@ export function MessagePanel({
 
   // Extract message text content
   const getMessageText = useCallback((msg: DecodedMessage): string | null => {
-    const typeId = (msg.contentType as { typeId?: string })?.typeId;
+    const contentType = msg.contentType as { typeId?: string; authorityId?: string } | undefined;
+    const typeId = contentType?.typeId;
     if (typeId === "readReceipt") return null;
+    if (isRemoveMessageControlType({ contentType })) return null;
     // Transaction references render as payment cards, not text
     if (typeId === "transactionReference") return null;
     // Payment requests and fulfillments render as cards, not text
@@ -1420,7 +1465,7 @@ export function MessagePanel({
     let content = msg.content;
 
     // If content is undefined, try to decode from encodedContent
-    if (content === undefined || content === null) {
+    if ((content === undefined || content === null) && shouldAttemptFallbackDecode(typeId)) {
       const encodedContent = (
         msg as { encodedContent?: { content?: Uint8Array } }
       ).encodedContent;
@@ -1533,15 +1578,17 @@ export function MessagePanel({
       const msg = getMessage(id);
       if (!msg) continue;
 
-      const typeId = (msg.contentType as { typeId?: string })?.typeId;
+      const contentType = msg.contentType as { typeId?: string; authorityId?: string } | undefined;
+      const typeId = contentType?.typeId;
 
       if (typeId === "readReceipt") continue;
+      if (isRemoveMessageControlType({ contentType })) continue;
 
       // Check if has displayable content
       let content = msg.content;
 
       // If content is undefined, try to decode from encodedContent
-      if (content === undefined || content === null) {
+      if ((content === undefined || content === null) && shouldAttemptFallbackDecode(typeId)) {
         const encodedContent = (
           msg as { encodedContent?: { content?: Uint8Array } }
         ).encodedContent;

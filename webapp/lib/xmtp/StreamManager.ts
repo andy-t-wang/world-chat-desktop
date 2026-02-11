@@ -91,6 +91,8 @@ const CONTENT_TYPE_REMOTE_ATTACHMENT = 'remoteAttachment';
 const CONTENT_TYPE_REMOTE_STATIC_ATTACHMENT = 'remoteStaticAttachment'; // World App naming
 const CONTENT_TYPE_MULTI_REMOTE_ATTACHMENT = 'multiRemoteAttachment';
 const CONTENT_TYPE_MULTI_REMOTE_STATIC_ATTACHMENT = 'multiRemoteStaticAttachment'; // World App naming
+const CONTENT_TYPE_REMOVE_MESSAGE = 'remove_message';
+const TOOLS_FOR_HUMANITY_AUTHORITY = 'toolsforhumanity.com';
 
 // CDN URL for trusted image attachments
 const TRUSTED_CDN_PATTERN = 'chat-assets.toolsforhumanity.com';
@@ -298,17 +300,37 @@ function matchesContentType(typeId: string | undefined, contentType: string): bo
   return lower === target || lower.includes(target);
 }
 
+// Tools for Humanity "remove message" control events are not user-visible messages
+function isRemoveMessageContentType(message: { contentType?: { typeId?: string; authorityId?: string } }): boolean {
+  const typeId = message.contentType?.typeId?.toLowerCase();
+  if (!typeId) return false;
+
+  if (typeId === CONTENT_TYPE_REMOVE_MESSAGE || typeId === 'removemessage') {
+    return true;
+  }
+
+  if (typeId.includes(CONTENT_TYPE_REMOVE_MESSAGE)) {
+    return true;
+  }
+
+  const authorityId = message.contentType?.authorityId?.toLowerCase();
+  return authorityId === TOOLS_FOR_HUMANITY_AUTHORITY &&
+    typeId.includes('remove') &&
+    typeId.includes('message');
+}
+
 // Check if a message is a hidden type (shouldn't show ANY preview text)
-function isSpecialContentType(message: { contentType?: { typeId?: string } }): boolean {
+function isSpecialContentType(message: { contentType?: { typeId?: string; authorityId?: string } }): boolean {
   const typeId = message.contentType?.typeId;
-  // Only read receipts and reactions are completely hidden
+  // Read receipts, reactions, and remove-message control events are hidden
   // Remote attachments show "Image" preview, so not included here
   return matchesContentType(typeId, CONTENT_TYPE_READ_RECEIPT) ||
-         matchesContentType(typeId, CONTENT_TYPE_REACTION);
+         matchesContentType(typeId, CONTENT_TYPE_REACTION) ||
+         isRemoveMessageContentType(message);
 }
 
 // Extract text content from a message
-function extractMessageContent(message: { content: unknown; contentType?: { typeId?: string }; encodedContent?: { content?: Uint8Array } }): string {
+function extractMessageContent(message: { content: unknown; contentType?: { typeId?: string; authorityId?: string }; encodedContent?: { content?: Uint8Array } }): string {
   // Skip read receipts and reactions for preview
   if (isSpecialContentType(message)) {
     return '';
@@ -1249,6 +1271,11 @@ class XMTPStreamManager {
             continue;
           }
 
+          // Skip non-displayable control messages
+          if (isRemoveMessageContentType(msg as { contentType?: { typeId?: string; authorityId?: string } })) {
+            continue;
+          }
+
           // Try to decode raw remote attachments
           if (typeId === CONTENT_TYPE_REMOTE_ATTACHMENT) {
             await tryDecodeRawRemoteAttachment(msg);
@@ -1268,6 +1295,9 @@ class XMTPStreamManager {
           for (const msg of messages) {
             const typeId = (msg as { contentType?: { typeId?: string } }).contentType?.typeId;
             if (matchesContentType(typeId, CONTENT_TYPE_READ_RECEIPT) || matchesContentType(typeId, CONTENT_TYPE_REACTION)) {
+              continue;
+            }
+            if (isRemoveMessageContentType(msg as { contentType?: { typeId?: string; authorityId?: string } })) {
               continue;
             }
             orderedIds.push(msg.id);
@@ -1592,6 +1622,8 @@ class XMTPStreamManager {
 
         // Skip read receipts entirely
         if (matchesContentType(typeId, CONTENT_TYPE_READ_RECEIPT)) continue;
+        // Skip non-displayable control messages (e.g. toolsforhumanity.com/remove_message)
+        if (isRemoveMessageContentType(msg as { contentType?: { typeId?: string; authorityId?: string } })) continue;
 
         // Count unread: messages from others that are newer than lastReadTs
         // Only count if we can properly identify own messages (ownInboxId must be set)
@@ -1996,6 +2028,10 @@ class XMTPStreamManager {
             continue;
           }
 
+          if (isRemoveMessageContentType(msg as { contentType?: { typeId?: string; authorityId?: string } })) {
+            continue;
+          }
+
           if (typeId === CONTENT_TYPE_REMOTE_ATTACHMENT) {
             await tryDecodeRawRemoteAttachment(msg);
           }
@@ -2162,6 +2198,11 @@ class XMTPStreamManager {
             continue;
           }
 
+          // Skip non-displayable control messages
+          if (isRemoveMessageContentType(msg as { contentType?: { typeId?: string; authorityId?: string } })) {
+            continue;
+          }
+
           // Try to decode raw remote attachments
           if (typeId === CONTENT_TYPE_REMOTE_ATTACHMENT) {
             await tryDecodeRawRemoteAttachment(msg);
@@ -2268,6 +2309,11 @@ class XMTPStreamManager {
           // Handle reaction messages
           if (matchesContentType(typeId, CONTENT_TYPE_REACTION)) {
             await this.processReaction(msg as unknown as DecodedMessage, true);
+            continue;
+          }
+
+          // Skip non-displayable control messages from external clients
+          if (isRemoveMessageContentType(msg as { contentType?: { typeId?: string; authorityId?: string } })) {
             continue;
           }
 
@@ -2674,6 +2720,8 @@ class XMTPStreamManager {
 
         // Skip reactions (they're processed separately)
         if (matchesContentType(typeId, CONTENT_TYPE_REACTION)) continue;
+        // Skip non-displayable control messages
+        if (isRemoveMessageContentType(msg as { contentType?: { typeId?: string; authorityId?: string } })) continue;
 
         // Check if this is a membership change message
         const isMembershipChange =
@@ -2706,6 +2754,9 @@ class XMTPStreamManager {
           const msgKind = (msg as { kind?: unknown }).kind;
           // Skip non-displayable types
           if (matchesContentType(typeId, CONTENT_TYPE_READ_RECEIPT) || matchesContentType(typeId, CONTENT_TYPE_REACTION)) {
+            continue;
+          }
+          if (isRemoveMessageContentType(msg as { contentType?: { typeId?: string; authorityId?: string } })) {
             continue;
           }
           // Skip membership changes (handled separately)
