@@ -2331,8 +2331,15 @@ class XMTPStreamManager {
             continue;
           }
 
-          // Skip if we already have this message
-          if (messageCache.has(msg.id)) continue;
+          // If we already have this message, it may still carry updated inline reactions.
+          // Process those updates even when the message id is unchanged.
+          if (messageCache.has(msg.id)) {
+            const existingMsgWithReactions = msg as unknown as { reactions?: DecodedMessage<Reaction>[] };
+            if (existingMsgWithReactions.reactions && existingMsgWithReactions.reactions.length > 0) {
+              this.storeInlineReactions(msg.id, existingMsgWithReactions.reactions);
+            }
+            continue;
+          }
 
           // Try to decode raw remote attachments (shouldn't be needed for streaming, but just in case)
           if (typeId === CONTENT_TYPE_REMOTE_ATTACHMENT) {
