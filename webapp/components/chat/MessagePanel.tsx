@@ -172,13 +172,6 @@ interface MembershipChangeContent {
 
 const REMOVE_MESSAGE_TYPE = "remove_message";
 const TOOLS_FOR_HUMANITY_AUTHORITY = "toolsforhumanity.com";
-const SLOW_DISPLAY_BUILD_WARN_MS = 120;
-const SLOW_DISPLAY_MESSAGE_COUNT = 300;
-const LARGE_FALLBACK_DECODE_WARN_BYTES = 128 * 1024;
-const LARGE_FALLBACK_DECODE_SKIP_BYTES = 512 * 1024;
-const PERF_LOG_COOLDOWN_MS = 5000;
-const MAIN_THREAD_STALL_CHECK_INTERVAL_MS = 1000;
-const MAIN_THREAD_STALL_WARN_MS = 800;
 const FALLBACK_DECODE_TYPE_IDS = new Set([
   "text",
   "reply",
@@ -216,15 +209,6 @@ function isRemoveMessageControlType(message: {
 function shouldAttemptFallbackDecode(typeId?: string): boolean {
   if (!typeId) return true;
   return FALLBACK_DECODE_TYPE_IDS.has(typeId.toLowerCase());
-}
-
-function summarizeTopContentTypes(
-  counts: Record<string, number>,
-  limit = 6,
-): Array<[string, number]> {
-  return Object.entries(counts)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, limit);
 }
 
 // Check if a message is an XMTP membership change message
@@ -1222,18 +1206,7 @@ export function MessagePanel({
   } = useMessages(conversationId);
 
   const ownInboxId = client?.inboxId ?? "";
-  const lastDisplayPerfLogAtRef = useRef(0);
-  const lastMainThreadStallLogAtRef = useRef(0);
-  const fallbackDecodeLogKeysRef = useRef<Set<string>>(new Set());
   const textDecoderRef = useRef<TextDecoder | null>(null);
-  const perfSnapshotRef = useRef({
-    messageCount: 0,
-    displayItemCount: 0,
-    pendingCount: 0,
-    isLoading: false,
-    isInitialLoading: false,
-    isSyncing: false,
-  });
 
   const getTextDecoder = useCallback((): TextDecoder => {
     if (!textDecoderRef.current) {
@@ -1244,33 +1217,12 @@ export function MessagePanel({
 
   const decodeFallbackContent = useCallback((
     msg: DecodedMessage,
-    typeId: string | undefined,
-    decodeContext: string,
   ): unknown => {
     const encodedContent = (
       msg as { encodedContent?: { content?: Uint8Array } }
     ).encodedContent;
     const rawBytes = encodedContent?.content;
     if (!rawBytes) return undefined;
-
-    const byteLength = rawBytes.byteLength;
-    if (byteLength >= LARGE_FALLBACK_DECODE_WARN_BYTES) {
-      const warnKey = `${decodeContext}:${msg.id}`;
-      if (!fallbackDecodeLogKeysRef.current.has(warnKey)) {
-        fallbackDecodeLogKeysRef.current.add(warnKey);
-        console.warn("[MessagePanel] Large fallback decode payload", {
-          conversationId,
-          messageId: msg.id,
-          typeId: typeId ?? "unknown",
-          decodeContext,
-          bytes: byteLength,
-        });
-      }
-    }
-
-    if (byteLength >= LARGE_FALLBACK_DECODE_SKIP_BYTES) {
-      return undefined;
-    }
 
     try {
       const decoded = getTextDecoder().decode(rawBytes);
@@ -1282,11 +1234,7 @@ export function MessagePanel({
     } catch {
       return undefined;
     }
-  }, [conversationId, getTextDecoder]);
-
-  useEffect(() => {
-    fallbackDecodeLogKeysRef.current.clear();
-  }, [conversationId]);
+  }, [getTextDecoder]);
 
   // Translation state
   const { translate, isInitialized: translationEnabled, isAutoTranslateEnabled, setAutoTranslate, getCachedTranslation, cacheTranslation, getCachedOriginal, cacheOriginal } = useTranslation();
@@ -1547,11 +1495,7 @@ export function MessagePanel({
 
     // If content is undefined, try to decode from encodedContent
     if ((content === undefined || content === null) && shouldAttemptFallbackDecode(typeId)) {
-      const decodedFallback = decodeFallbackContent(
-        msg,
-        typeId,
-        "getMessageText",
-      );
+      const decodedFallback = decodeFallbackContent(msg);
       if (decodedFallback !== undefined) {
         content = decodedFallback;
       }
@@ -1633,11 +1577,7 @@ export function MessagePanel({
   // Note: We build a simplified structure here and compute details at render time
   // to avoid getMessage instability in dependencies
   const displayItems = useMemo((): DisplayItem[] => {
-    const buildStartMs = performance.now();
     const items: DisplayItem[] = [];
-    const contentTypeCounts: Record<string, number> = {};
-    let fallbackDecodeAttempts = 0;
-    let fallbackDecodeSuccesses = 0;
 
     // First, collect valid message data
     const reversedIds = [...messageIds].reverse();
@@ -1656,8 +1596,6 @@ export function MessagePanel({
 
       const contentType = msg.contentType as { typeId?: string; authorityId?: string } | undefined;
       const typeId = contentType?.typeId;
-      const typeKey = (typeId ?? "unknown").toLowerCase();
-      contentTypeCounts[typeKey] = (contentTypeCounts[typeKey] ?? 0) + 1;
 
       if (typeId === "readReceipt") continue;
       if (isRemoveMessageControlType({ contentType })) continue;
@@ -1667,15 +1605,9 @@ export function MessagePanel({
 
       // If content is undefined, try to decode from encodedContent
       if ((content === undefined || content === null) && shouldAttemptFallbackDecode(typeId)) {
-        fallbackDecodeAttempts++;
-        const decodedFallback = decodeFallbackContent(
-          msg,
-          typeId,
-          "displayItems",
-        );
+        const decodedFallback = decodeFallbackContent(msg);
         if (decodedFallback !== undefined) {
           content = decodedFallback;
-          fallbackDecodeSuccesses++;
         }
       }
 
@@ -1822,10 +1754,6 @@ export function MessagePanel({
         } else {
           // Defensive: if no groupable membership changes were found, force progress.
           // Some malformed/empty membership events can otherwise cause an infinite loop.
-          console.warn("[MessagePanel] Non-groupable membership change encountered", {
-            conversationId,
-            messageId: curr.id,
-          });
           items.push({
             type: "message",
             id: curr.id,
@@ -1892,78 +1820,9 @@ export function MessagePanel({
       }
     }
 
-    const buildDurationMs = performance.now() - buildStartMs;
-    const shouldLogSlowBuild =
-      buildDurationMs >= SLOW_DISPLAY_BUILD_WARN_MS ||
-      messageIds.length >= SLOW_DISPLAY_MESSAGE_COUNT;
-
-    if (shouldLogSlowBuild) {
-      const now = Date.now();
-      if (now - lastDisplayPerfLogAtRef.current >= PERF_LOG_COOLDOWN_MS) {
-        console.warn("[MessagePanel] displayItems build performance", {
-          conversationId,
-          durationMs: Number(buildDurationMs.toFixed(1)),
-          messageCount: messageIds.length,
-          pendingCount: pendingMessages.length,
-          displayItemCount: items.length,
-          fallbackDecodeAttempts,
-          fallbackDecodeSuccesses,
-          topContentTypes: summarizeTopContentTypes(contentTypeCounts),
-        });
-        lastDisplayPerfLogAtRef.current = now;
-      }
-    }
-
     return items;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [conversationId, decodeFallbackContent, messageIds.join(","), pendingMessages.length, ownInboxId]);
-
-  useEffect(() => {
-    perfSnapshotRef.current = {
-      messageCount: messageIds.length,
-      displayItemCount: displayItems.length,
-      pendingCount: pendingMessages.length,
-      isLoading,
-      isInitialLoading,
-      isSyncing,
-    };
-  }, [displayItems.length, isInitialLoading, isLoading, isSyncing, messageIds.length, pendingMessages.length]);
-
-  useEffect(() => {
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    let expected = performance.now() + MAIN_THREAD_STALL_CHECK_INTERVAL_MS;
-
-    const checkMainThreadLag = () => {
-      const now = performance.now();
-      const lagMs = now - expected;
-
-      if (lagMs >= MAIN_THREAD_STALL_WARN_MS) {
-        const nowTs = Date.now();
-        if (nowTs - lastMainThreadStallLogAtRef.current >= PERF_LOG_COOLDOWN_MS) {
-          const snapshot = perfSnapshotRef.current;
-          console.warn("[MessagePanel] Main thread stall detected", {
-            conversationId,
-            lagMs: Number(lagMs.toFixed(1)),
-            messageCount: snapshot.messageCount,
-            displayItemCount: snapshot.displayItemCount,
-            pendingCount: snapshot.pendingCount,
-            isLoading: snapshot.isLoading,
-            isInitialLoading: snapshot.isInitialLoading,
-            isSyncing: snapshot.isSyncing,
-          });
-          lastMainThreadStallLogAtRef.current = nowTs;
-        }
-      }
-
-      expected = performance.now() + MAIN_THREAD_STALL_CHECK_INTERVAL_MS;
-      timer = setTimeout(checkMainThreadLag, MAIN_THREAD_STALL_CHECK_INTERVAL_MS);
-    };
-
-    timer = setTimeout(checkMainThreadLag, MAIN_THREAD_STALL_CHECK_INTERVAL_MS);
-    return () => {
-      if (timer) clearTimeout(timer);
-    };
-  }, [conversationId]);
+  }, [decodeFallbackContent, messageIds.join(","), pendingMessages.length, ownInboxId]);
 
   // Track if user is near bottom (for smart scroll behavior)
   const isNearBottomRef = useRef(true);
@@ -2691,11 +2550,7 @@ export function MessagePanel({
 
                   // If content is undefined but we have a transaction type, try to decode from fallback/encodedContent
                   if (typeId === "transactionReference" && !txContent) {
-                    const decodedFallback = decodeFallbackContent(
-                      msg,
-                      typeId,
-                      "render.transactionReference",
-                    );
+                    const decodedFallback = decodeFallbackContent(msg);
                     if (decodedFallback !== undefined) {
                       txContent = decodedFallback;
                     }
@@ -2769,11 +2624,7 @@ export function MessagePanel({
                   let paymentContent = msg.content;
 
                   if ((typeId === "paymentRequest" || typeId === "paymentFulfillment") && !paymentContent) {
-                    const decodedFallback = decodeFallbackContent(
-                      msg,
-                      typeId,
-                      "render.payment",
-                    );
+                    const decodedFallback = decodeFallbackContent(msg);
                     if (decodedFallback !== undefined) {
                       paymentContent = decodedFallback;
                     }
@@ -2882,11 +2733,7 @@ export function MessagePanel({
 
                   // If content is undefined but we have a multi-attachment type, try to decode from encodedContent
                   if (isMultiType && (!attachmentContent || Object.keys(attachmentContent).length === 0)) {
-                    const decodedFallback = decodeFallbackContent(
-                      msg,
-                      typeId,
-                      "render.multiAttachment",
-                    );
+                    const decodedFallback = decodeFallbackContent(msg);
                     if (decodedFallback !== undefined) {
                       attachmentContent = decodedFallback;
                     }

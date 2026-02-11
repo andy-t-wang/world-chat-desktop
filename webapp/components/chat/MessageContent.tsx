@@ -18,6 +18,30 @@ interface MessageTextProps {
 const URL_PATTERN = /https?:\/\/[^\s<>"{}|\\^`[\]]+/g;
 const TICKER_PATTERN = /([#$])([A-Za-z]{1,10})\b/g; // $ for crypto, # for stocks/commodities
 const MENTION_PATTERN = /@([A-Za-z0-9_\.]+)/g; // @username mentions
+const NEWLINE_PATTERN = /\r\n|\r|\n|\u2028|\u2029/g;
+
+function pushTextWithLineBreaks(parts: ReactNode[], value: string, keyPrefix: string): void {
+  if (!value) return;
+
+  let lastIndex = 0;
+  let newlineMatch: RegExpExecArray | null = null;
+  const newlineRegex = new RegExp(NEWLINE_PATTERN.source, 'g');
+  let lineIndex = 0;
+
+  while ((newlineMatch = newlineRegex.exec(value)) !== null) {
+    if (newlineMatch.index > lastIndex) {
+      parts.push(value.slice(lastIndex, newlineMatch.index));
+    }
+
+    parts.push(<br key={`${keyPrefix}-br-${lineIndex}`} />);
+    lineIndex++;
+    lastIndex = newlineMatch.index + newlineMatch[0].length;
+  }
+
+  if (lastIndex < value.length) {
+    parts.push(value.slice(lastIndex));
+  }
+}
 
 // Component to render just the text content with clickable links and tickers
 export function MessageText({ text, isOwnMessage, onTickerClick, onMentionClick }: MessageTextProps) {
@@ -76,8 +100,12 @@ export function MessageText({ text, isOwnMessage, onTickerClick, onMentionClick 
       });
     }
 
-    // If no matches, return plain text
-    if (matches.length === 0) return text;
+    // If no matches, return plain text with preserved new lines
+    if (matches.length === 0) {
+      const plainParts: ReactNode[] = [];
+      pushTextWithLineBreaks(plainParts, text, 'plain');
+      return plainParts;
+    }
 
     // Sort by position
     matches.sort((a, b) => a.start - b.start);
@@ -92,7 +120,7 @@ export function MessageText({ text, isOwnMessage, onTickerClick, onMentionClick 
 
       // Add text before this match
       if (m.start > lastIndex) {
-        parts.push(text.slice(lastIndex, m.start));
+        pushTextWithLineBreaks(parts, text.slice(lastIndex, m.start), `text-${lastIndex}`);
       }
 
       if (m.type === 'url') {
@@ -172,7 +200,7 @@ export function MessageText({ text, isOwnMessage, onTickerClick, onMentionClick 
 
     // Add remaining text
     if (lastIndex < text.length) {
-      parts.push(text.slice(lastIndex));
+      pushTextWithLineBreaks(parts, text.slice(lastIndex), `text-${lastIndex}`);
     }
 
     return parts;
