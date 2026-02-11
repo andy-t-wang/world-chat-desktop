@@ -273,6 +273,9 @@ const FALLBACK_SYNC_INTERVAL_MS = 60000; // Sync every 60 seconds when degraded
 // Timeout for XMTP operations to prevent hangs on forked groups
 // Messages should load from local cache almost instantly - if it takes >3s something is wrong
 const XMTP_OPERATION_TIMEOUT_MS = 3000; // 3 seconds max
+const SLOW_MESSAGE_BATCH_WARN_MS = 500;
+const SLOW_MESSAGE_LOAD_WARN_MS = 1500;
+const MESSAGE_LOAD_LOG_COOLDOWN_MS = 5000;
 
 /**
  * Wrap a promise with a timeout to prevent infinite hangs
@@ -285,6 +288,15 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number, operationName: s
       setTimeout(() => reject(new Error(`${operationName} timed out after ${timeoutMs}ms`)), timeoutMs)
     ),
   ]);
+}
+
+function summarizeTopContentTypes(
+  counts: Record<string, number>,
+  limit = 6,
+): Array<[string, number]> {
+  return Object.entries(counts)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, limit);
 }
 
 // localStorage key for persisting last-read timestamps
@@ -538,6 +550,9 @@ class XMTPStreamManager {
   // Cache of inboxId -> address for all members we've seen (persists even after removal)
   private memberAddressCache = new Map<string, string>();
 
+  // Per-conversation cooldown for message load perf warnings
+  private messageLoadPerfLogAt = new Map<string, number>();
+
   // Periodic history sync interval (to respond to new installation sync requests)
   private historySyncInterval: ReturnType<typeof setInterval> | null = null;
 
@@ -582,6 +597,49 @@ class XMTPStreamManager {
    */
   isDatabaseCorrupted(): boolean {
     return this.databaseCorrupted;
+  }
+
+  private shouldLogMessageLoadPerf(conversationId: string): boolean {
+    const now = Date.now();
+    const lastLoggedAt = this.messageLoadPerfLogAt.get(conversationId) ?? 0;
+    if (now - lastLoggedAt < MESSAGE_LOAD_LOG_COOLDOWN_MS) {
+      return false;
+    }
+    this.messageLoadPerfLogAt.set(conversationId, now);
+    return true;
+  }
+
+  private logMessageLoadSummary(
+    kind: 'initial' | 'loadMore',
+    conversationId: string,
+    stats: {
+      durationMs: number;
+      iterations: number;
+      fetchedCount: number;
+      displayableCount: number;
+      reactionCount: number;
+      readReceiptCount: number;
+      removeMessageCount: number;
+      hasMore: boolean;
+      typeHistogram: Record<string, number>;
+    },
+  ): void {
+    if (!this.shouldLogMessageLoadPerf(conversationId)) {
+      return;
+    }
+
+    console.warn(`[StreamManager] ${kind} message load performance`, {
+      conversationId,
+      durationMs: Number(stats.durationMs.toFixed(1)),
+      iterations: stats.iterations,
+      fetchedCount: stats.fetchedCount,
+      displayableCount: stats.displayableCount,
+      reactionCount: stats.reactionCount,
+      readReceiptCount: stats.readReceiptCount,
+      removeMessageCount: stats.removeMessageCount,
+      hasMore: stats.hasMore,
+      topContentTypes: summarizeTopContentTypes(stats.typeHistogram),
+    });
   }
 
   /**
@@ -1993,18 +2051,38 @@ class XMTPStreamManager {
     let oldestMessageNs: bigint | null = null;
     let hasMore = true;
     let iterations = 0;
+    const loadStartMs = performance.now();
+    let fetchedCount = 0;
+    let reactionCount = 0;
+    let readReceiptCount = 0;
+    let removeMessageCount = 0;
+    const typeHistogram: Record<string, number> = {};
 
     try {
       while (displayableIds.length < MIN_DISPLAYABLE_MESSAGES && hasMore && iterations < MAX_FETCH_ITERATIONS) {
         iterations++;
 
         // Quick timeout - if messages don't load fast, we need to sync
+        const batchStartMs = performance.now();
         const messagesPromise = conv.messages({
           limit: BigInt(BATCH_SIZE),
           sentBeforeNs: oldestMessageNs ?? undefined,
           direction: SortDirection.Descending,
         });
         const messages = await withTimeout(messagesPromise, XMTP_OPERATION_TIMEOUT_MS, 'conv.messages');
+        const batchDurationMs = performance.now() - batchStartMs;
+        fetchedCount += messages.length;
+
+        if (batchDurationMs >= SLOW_MESSAGE_BATCH_WARN_MS && this.shouldLogMessageLoadPerf(conversationId)) {
+          console.warn('[StreamManager] Slow initial message batch fetch', {
+            conversationId,
+            iteration: iterations,
+            batchDurationMs: Number(batchDurationMs.toFixed(1)),
+            batchSize: messages.length,
+            fetchedCount,
+            displayableCount: displayableIds.length,
+          });
+        }
 
         if (messages.length === 0) {
           hasMore = false;
@@ -2013,8 +2091,11 @@ class XMTPStreamManager {
 
         for (const msg of messages) {
           const typeId = (msg as { contentType?: { typeId?: string } }).contentType?.typeId;
+          const typeKey = (typeId ?? 'unknown').toLowerCase();
+          typeHistogram[typeKey] = (typeHistogram[typeKey] ?? 0) + 1;
 
           if (matchesContentType(typeId, CONTENT_TYPE_READ_RECEIPT)) {
+            readReceiptCount++;
             if (msg.senderInboxId !== this.client?.inboxId) {
               this.updateReadReceipt(conversationId, msg.sentAtNs);
             } else {
@@ -2024,11 +2105,13 @@ class XMTPStreamManager {
           }
 
           if (matchesContentType(typeId, CONTENT_TYPE_REACTION)) {
+            reactionCount++;
             await this.processReaction(msg as unknown as DecodedMessage);
             continue;
           }
 
           if (isRemoveMessageContentType(msg as { contentType?: { typeId?: string; authorityId?: string } })) {
+            removeMessageCount++;
             continue;
           }
 
@@ -2059,12 +2142,38 @@ class XMTPStreamManager {
         isLoading: false,
       });
 
+      const loadDurationMs = performance.now() - loadStartMs;
+      if (loadDurationMs >= SLOW_MESSAGE_LOAD_WARN_MS || fetchedCount >= BATCH_SIZE * 2) {
+        this.logMessageLoadSummary('initial', conversationId, {
+          durationMs: loadDurationMs,
+          iterations,
+          fetchedCount,
+          displayableCount: displayableIds.length,
+          reactionCount,
+          readReceiptCount,
+          removeMessageCount,
+          hasMore,
+          typeHistogram,
+        });
+      }
+
       return true;
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       const needsSync = errorMessage.includes('timed out') || errorMessage.includes('epoch');
 
       if (needsSync) {
+        this.logMessageLoadSummary('initial', conversationId, {
+          durationMs: performance.now() - loadStartMs,
+          iterations,
+          fetchedCount,
+          displayableCount: displayableIds.length,
+          reactionCount,
+          readReceiptCount,
+          removeMessageCount,
+          hasMore,
+          typeHistogram,
+        });
         console.log(`[StreamManager] Messages load failed, sync needed: ${errorMessage}`);
         return false;
       }
@@ -2151,11 +2260,17 @@ class XMTPStreamManager {
     });
 
     try {
+      const loadStartMs = performance.now();
       const currentIds = this.getMessageIds(conversationId);
       const newDisplayableIds: string[] = [];
       let oldestMessageNs = pagination.oldestMessageNs;
       let hasMore = true;
       let iterations = 0;
+      let fetchedCount = 0;
+      let reactionCount = 0;
+      let readReceiptCount = 0;
+      let removeMessageCount = 0;
+      const typeHistogram: Record<string, number> = {};
 
       // Keep fetching until we have enough displayable messages
       while (newDisplayableIds.length < MIN_LOADMORE_MESSAGES && hasMore && iterations < MAX_FETCH_ITERATIONS) {
@@ -2163,6 +2278,7 @@ class XMTPStreamManager {
 
         let messages;
         try {
+          const batchStartMs = performance.now();
           messages = await withTimeout(
             conv.messages({
               limit: BigInt(BATCH_SIZE),
@@ -2172,6 +2288,18 @@ class XMTPStreamManager {
             XMTP_OPERATION_TIMEOUT_MS,
             'loadMore.messages'
           );
+          const batchDurationMs = performance.now() - batchStartMs;
+          fetchedCount += messages.length;
+          if (batchDurationMs >= SLOW_MESSAGE_BATCH_WARN_MS && this.shouldLogMessageLoadPerf(conversationId)) {
+            console.warn('[StreamManager] Slow load-more message batch fetch', {
+              conversationId,
+              iteration: iterations,
+              batchDurationMs: Number(batchDurationMs.toFixed(1)),
+              batchSize: messages.length,
+              fetchedCount,
+              displayableCount: newDisplayableIds.length,
+            });
+          }
         } catch (error) {
           // Timeout - stop trying to load more
           console.warn('[StreamManager] Load more messages timed out for', conversationId);
@@ -2186,20 +2314,25 @@ class XMTPStreamManager {
 
         for (const msg of messages) {
           const typeId = (msg as { contentType?: { typeId?: string } }).contentType?.typeId;
+          const typeKey = (typeId ?? 'unknown').toLowerCase();
+          typeHistogram[typeKey] = (typeHistogram[typeKey] ?? 0) + 1;
 
           // Process reactions (but don't display as messages)
           if (matchesContentType(typeId, CONTENT_TYPE_REACTION)) {
+            reactionCount++;
             await this.processReaction(msg as unknown as DecodedMessage);
             continue;
           }
 
           // Skip read receipts
           if (matchesContentType(typeId, CONTENT_TYPE_READ_RECEIPT)) {
+            readReceiptCount++;
             continue;
           }
 
           // Skip non-displayable control messages
           if (isRemoveMessageContentType(msg as { contentType?: { typeId?: string; authorityId?: string } })) {
+            removeMessageCount++;
             continue;
           }
 
@@ -2236,6 +2369,21 @@ class XMTPStreamManager {
         oldestMessageNs,
         isLoading: false,
       });
+
+      const loadDurationMs = performance.now() - loadStartMs;
+      if (loadDurationMs >= SLOW_MESSAGE_LOAD_WARN_MS || fetchedCount >= BATCH_SIZE * 2) {
+        this.logMessageLoadSummary('loadMore', conversationId, {
+          durationMs: loadDurationMs,
+          iterations,
+          fetchedCount,
+          displayableCount: newDisplayableIds.length,
+          reactionCount,
+          readReceiptCount,
+          removeMessageCount,
+          hasMore,
+          typeHistogram,
+        });
+      }
     } catch (error) {
       console.error('[StreamManager] Failed to load more messages:', error);
       this.setPagination(conversationId, {
@@ -4030,6 +4178,7 @@ class XMTPStreamManager {
     this.loadedMessageConversations.clear();
     this.conversationMetadata.clear();
     this.conversations.clear();
+    this.messageLoadPerfLogAt.clear();
 
     // Reset restart counters
     this.conversationStreamRestarts = 0;

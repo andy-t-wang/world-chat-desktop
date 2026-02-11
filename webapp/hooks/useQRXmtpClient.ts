@@ -37,12 +37,14 @@ async function loadAllModules() {
     transactionRefModule,
     paymentReqModule,
     paymentFulfillModule,
+    removeMessageModule,
   ] = await Promise.all([
     import("@xmtp/browser-sdk"),
     import("@xmtp/content-type-remote-attachment"),
     import("@/lib/xmtp/TransactionReferenceCodec"),
     import("@/lib/xmtp/PaymentRequestCodec"),
     import("@/lib/xmtp/PaymentFulfillmentCodec"),
+    import("@/lib/xmtp/RemoveMessageCodec"),
   ]);
 
   return {
@@ -54,6 +56,7 @@ async function loadAllModules() {
     TransactionReferenceCodec: transactionRefModule.TransactionReferenceCodec,
     PaymentRequestCodec: paymentReqModule.PaymentRequestCodec,
     PaymentFulfillmentCodec: paymentFulfillModule.PaymentFulfillmentCodec,
+    RemoveMessageCodec: removeMessageModule.RemoveMessageCodec,
   };
 }
 
@@ -166,6 +169,7 @@ export function useQRXmtpClient(): UseQRXmtpClientResult {
         TransactionReferenceCodec,
         PaymentRequestCodec,
         PaymentFulfillmentCodec,
+        RemoveMessageCodec,
       } = await getModules();
 
       // Use Client.build() for faster session restoration
@@ -186,6 +190,7 @@ export function useQRXmtpClient(): UseQRXmtpClientResult {
             new TransactionReferenceCodec(),
             new PaymentRequestCodec(),
             new PaymentFulfillmentCodec(),
+            new RemoveMessageCodec(),
           ],
         },
       );
@@ -323,6 +328,7 @@ export function useQRXmtpClient(): UseQRXmtpClientResult {
           TransactionReferenceCodec,
           PaymentRequestCodec,
           PaymentFulfillmentCodec,
+          RemoveMessageCodec,
         } = await getModules();
 
         const clientOptions = {
@@ -336,6 +342,7 @@ export function useQRXmtpClient(): UseQRXmtpClientResult {
             new TransactionReferenceCodec(),
             new PaymentRequestCodec(),
             new PaymentFulfillmentCodec(),
+            new RemoveMessageCodec(),
           ],
         };
 
