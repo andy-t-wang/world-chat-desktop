@@ -19,7 +19,7 @@ jobs:
             platform: mac
             arch: arm64
           # macOS x64 (Intel)
-          - os: macos-15-large
+          - os: macos-13
             platform: mac
             arch: x64
           # Windows x64
@@ -64,7 +64,7 @@ jobs:
       # macOS: Build with signing and notarization
       - name: Package macOS (signed)
         if: matrix.platform == 'mac'
-        run: pnpm exec electron-builder --mac --${{ matrix.arch }} --publish always
+        run: pnpm exec electron-builder --mac --${{ matrix.arch }} --publish never
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_LINK: ${{ secrets.CSC_LINK }}
@@ -78,7 +78,7 @@ jobs:
       # Windows: Build without signing (add signing later with CSC_LINK for Windows)
       - name: Package Windows
         if: matrix.platform == 'win'
-        run: pnpm exec electron-builder --win --${{ matrix.arch }} --publish always
+        run: pnpm exec electron-builder --win --${{ matrix.arch }} --publish never
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
@@ -87,7 +87,7 @@ jobs:
       # Linux: Build (no signing required)
       - name: Package Linux
         if: matrix.platform == 'linux'
-        run: pnpm exec electron-builder --linux --${{ matrix.arch }} --publish always
+        run: pnpm exec electron-builder --linux --${{ matrix.arch }} --publish never
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
@@ -128,6 +128,7 @@ jobs:
             release/*.exe
             release/*.AppImage
             release/*.deb
+            release/*.yml
           draft: false
           prerelease: false
         env:
