@@ -93,6 +93,7 @@ const CONTENT_TYPE_MULTI_REMOTE_ATTACHMENT = 'multiRemoteAttachment';
 const CONTENT_TYPE_MULTI_REMOTE_STATIC_ATTACHMENT = 'multiRemoteStaticAttachment'; // World App naming
 const CONTENT_TYPE_REMOVE_MESSAGE = 'remove_message';
 const TOOLS_FOR_HUMANITY_AUTHORITY = 'toolsforhumanity.com';
+const PENDING_DB_CLEAR_KEY = 'xmtp-pending-db-clear';
 
 // CDN URL for trusted image attachments
 const TRUSTED_CDN_PATTERN = 'chat-assets.toolsforhumanity.com';
@@ -549,6 +550,7 @@ class XMTPStreamManager {
 
   // Track if database corruption was detected
   private databaseCorrupted = false;
+  private corruptionRecoveryQueued = false;
 
   /**
    * Check if a heavy I/O operation (like translation download) is in progress
@@ -590,6 +592,7 @@ class XMTPStreamManager {
    */
   private checkForDatabaseCorruption(error: unknown): boolean {
     const errorStr = String(error);
+    const errorLower = errorStr.toLowerCase();
     const state = {
       translationInProgress: this.translationInProgress,
       syncing: this.isSyncing(),
@@ -601,15 +604,65 @@ class XMTPStreamManager {
     console.error(`[StreamManager] XMTP Error:`, errorStr, state);
     window.electronAPI?.debugLog?.('StreamManager', 'XMTP Error', { error: errorStr, state });
 
-    if (errorStr.includes('database disk image is malformed') ||
-        errorStr.includes('SQLITE_CORRUPT') ||
-        errorStr.includes('SqlKeyStore') && errorStr.includes('malformed')) {
+    if (
+      errorLower.includes('database disk image is malformed') ||
+      errorLower.includes('sqlite_corrupt') ||
+      (errorLower.includes('sqlkeystore') && errorLower.includes('malformed')) ||
+      (errorLower.includes('welcome error') && errorLower.includes('querying storage'))
+    ) {
       console.error('[StreamManager] *** DATABASE CORRUPTION DETECTED ***');
       window.electronAPI?.debugLog?.('StreamManager', '*** DATABASE CORRUPTION DETECTED ***', state);
-      this.databaseCorrupted = true;
+      this.triggerCorruptionRecovery();
       return true;
     }
     return false;
+  }
+
+  /**
+   * Queue one-time local database reset and stop stream work immediately.
+   * Recovery happens on next session restore before any XMTP call.
+   */
+  private triggerCorruptionRecovery(): void {
+    this.databaseCorrupted = true;
+
+    if (this.corruptionRecoveryQueued) {
+      return;
+    }
+    this.corruptionRecoveryQueued = true;
+
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem(PENDING_DB_CLEAR_KEY, 'true');
+      } catch {
+        // Ignore localStorage write errors
+      }
+    }
+
+    // Stop all stream work to avoid retry loops on corrupted DB.
+    this.stopFallbackSync();
+    this.conversationStreamController?.abort();
+    this.conversationStreamController = null;
+    this.allMessagesStreamController?.abort();
+    this.allMessagesStreamController = null;
+
+    this.updateStreamStatus({
+      conversationStream: 'stopped',
+      messagesStream: 'stopped',
+      conversationHealthy: false,
+      messagesHealthy: false,
+      fallbackSyncActive: false,
+    });
+    this.updateStreamHealth('offline');
+  }
+
+  /**
+   * Ensure DB reset is queued before forcing a full reload from the UI.
+   */
+  queueDatabaseRepairAndReload(): void {
+    this.triggerCorruptionRecovery();
+    if (typeof window !== 'undefined') {
+      window.location.reload();
+    }
   }
 
   /**
@@ -3855,6 +3908,12 @@ class XMTPStreamManager {
   manualReconnect(): void {
     console.log('[StreamManager] Manual reconnect requested');
 
+    if (this.databaseCorrupted) {
+      console.warn('[StreamManager] Manual reconnect blocked - database is corrupted');
+      this.updateStreamHealth('offline');
+      return;
+    }
+
     // Reset failure counter and mark both streams as potentially healthy
     // (they'll be re-evaluated once streams actually connect)
     this.updateStreamStatus({
@@ -4041,6 +4100,8 @@ class XMTPStreamManager {
     // Reset restart counters
     this.conversationStreamRestarts = 0;
     this.allMessagesStreamRestarts = 0;
+    this.databaseCorrupted = false;
+    this.corruptionRecoveryQueued = false;
 
     // Clear history sync interval
     if (this.historySyncInterval) {

@@ -14,7 +14,6 @@ import {
 import {
   getSessionCache,
   setSessionCache,
-  isElectron,
   deleteXmtpDatabase,
   deleteAllXmtpDatabases,
 } from "@/lib/storage";
@@ -24,6 +23,18 @@ let cachedModules: Awaited<ReturnType<typeof loadAllModules>> | null = null;
 let moduleLoadPromise: Promise<
   Awaited<ReturnType<typeof loadAllModules>>
 > | null = null;
+const PENDING_DB_CLEAR_KEY = "xmtp-pending-db-clear";
+
+function isDatabaseCorruptionError(errorMessage: string): boolean {
+  const errorLower = errorMessage.toLowerCase();
+  return (
+    errorLower.includes("database disk image is malformed") ||
+    errorLower.includes("sqlite_corrupt") ||
+    (errorLower.includes("sqlkeystore") && errorLower.includes("malformed")) ||
+    (errorLower.includes("welcome error") &&
+      errorLower.includes("querying storage"))
+  );
+}
 
 /**
  * Load all XMTP modules in parallel (cached)
@@ -127,16 +138,20 @@ export function useQRXmtpClient(): UseQRXmtpClientResult {
       return !!client;
     }
 
-    // Check if we need to clear the database (set by logout fallback)
+    // Check if we need to clear the database (set by corruption recovery path)
     // This must happen BEFORE any XMTP client operations
-    const pendingClear = localStorage.getItem("xmtp-pending-db-clear");
+    const pendingClear = localStorage.getItem(PENDING_DB_CLEAR_KEY);
     if (pendingClear === "true") {
-      try {
-        await deleteAllXmtpDatabases();
-      } catch {
-        // Ignore errors
+      const result = await deleteAllXmtpDatabases();
+      if (!result.success) {
+        console.error(
+          "[useQRXmtpClient] Failed pending DB clear:",
+          result.error || result.failedFiles.join(", "),
+        );
+        return false;
       }
-      localStorage.removeItem("xmtp-pending-db-clear");
+      localStorage.removeItem(PENDING_DB_CLEAR_KEY);
+      clearSession();
       return false;
     }
 
@@ -231,6 +246,15 @@ export function useQRXmtpClient(): UseQRXmtpClientResult {
           });
           return false;
         }
+
+        if (isDatabaseCorruptionError(verifyMsg)) {
+          try {
+            localStorage.setItem(PENDING_DB_CLEAR_KEY, "true");
+          } catch {
+            // Ignore localStorage write errors
+          }
+          throw new Error("DATABASE_CORRUPTED");
+        }
         // Other errors might be transient, continue
       }
 
@@ -261,6 +285,24 @@ export function useQRXmtpClient(): UseQRXmtpClientResult {
         errorMessage.includes("createSyncAccessHandle")
       ) {
         throw new Error("TAB_LOCKED");
+      }
+
+      if (
+        errorMessage === "DATABASE_CORRUPTED" ||
+        isDatabaseCorruptionError(errorMessage)
+      ) {
+        try {
+          localStorage.setItem(PENDING_DB_CLEAR_KEY, "true");
+        } catch {
+          // Ignore localStorage write errors
+        }
+        dispatch({
+          type: "INIT_ERROR",
+          error: new Error(
+            "Local message database is corrupted. Reload to repair.",
+          ),
+        });
+        return false;
       }
 
       // Only clear session if OPFS database is truly gone

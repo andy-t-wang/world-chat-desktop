@@ -8,6 +8,7 @@ import { streamManager } from '@/lib/xmtp/StreamManager';
 export function ReconnectionBanner() {
   const health = useAtomValue(streamHealthAtom);
   const status = useAtomValue(streamStatusAtom);
+  const isDatabaseCorrupted = streamManager.isDatabaseCorrupted();
 
   // Don't show banner when healthy
   if (health === 'healthy') {
@@ -15,6 +16,10 @@ export function ReconnectionBanner() {
   }
 
   const handleRetry = () => {
+    if (isDatabaseCorrupted) {
+      streamManager.queueDatabaseRepairAndReload();
+      return;
+    }
     streamManager.manualReconnect();
   };
 
@@ -61,14 +66,16 @@ export function ReconnectionBanner() {
           <div className="flex items-center gap-2">
             <WifiOff className="w-4 h-4 text-red-600 dark:text-red-400" />
             <span className="text-sm text-red-700 dark:text-red-300">
-              Connection lost
+              {isDatabaseCorrupted
+                ? 'Local database corrupted - reload to repair'
+                : 'Connection lost'}
             </span>
           </div>
           <button
             onClick={handleRetry}
             className="text-sm font-medium text-red-700 dark:text-red-300 hover:text-red-900 dark:hover:text-red-100 transition-colors"
           >
-            Retry
+            {isDatabaseCorrupted ? 'Repair' : 'Retry'}
           </button>
         </div>
       </div>
