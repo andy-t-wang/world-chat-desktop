@@ -274,6 +274,7 @@ const FALLBACK_SYNC_INTERVAL_MS = 60000; // Sync every 60 seconds when degraded
 // Timeout for XMTP operations to prevent hangs on forked groups
 // Messages should load from local cache almost instantly - if it takes >3s something is wrong
 const XMTP_OPERATION_TIMEOUT_MS = 3000; // 3 seconds max
+const XMTP_SEND_TIMEOUT_MS = 15000; // 15 seconds max for send operations
 
 /**
  * Wrap a promise with a timeout to prevent infinite hangs
@@ -2849,13 +2850,24 @@ class XMTPStreamManager {
     if (!this.client) return null;
 
     try {
-      await this.client.conversations.sync();
+      await withTimeout(
+        this.client.conversations.sync(),
+        XMTP_OPERATION_TIMEOUT_MS,
+        'sendRecovery.conversations.sync'
+      );
     } catch (error) {
       console.warn('[StreamManager] Conversation list sync failed during send recovery:', error);
     }
 
+    // Best-effort full sync for allowed conversations to refresh MLS state
+    await this.syncAllWithMlsFallback([ConsentState.Allowed], 'send-recovery');
+
     try {
-      const refreshedConversation = await this.client.conversations.getConversationById(conversationId);
+      const refreshedConversation = await withTimeout(
+        this.client.conversations.getConversationById(conversationId),
+        XMTP_OPERATION_TIMEOUT_MS,
+        'sendRecovery.getConversationById'
+      );
       if (!refreshedConversation) {
         return null;
       }
@@ -2892,7 +2904,11 @@ class XMTPStreamManager {
 
     const sendWithConversation = async (targetConv: Conversation): Promise<string> => {
       const sentAtNs = BigInt(Date.now()) * 1_000_000n;
-      const messageId = await targetConv.sendText(trimmedContent);
+      const messageId = await withTimeout(
+        targetConv.sendText(trimmedContent),
+        XMTP_SEND_TIMEOUT_MS,
+        'sendText'
+      );
 
       // Add message to cache immediately for optimistic display
       // This prevents the 30+ second delay waiting for stream round-trip
@@ -2942,7 +2958,7 @@ class XMTPStreamManager {
           } catch (retryError) {
             const shouldQuarantineGroup =
               !isDm(refreshedConv) &&
-              (isMlsGroupNotFoundError(retryError) || isPublishIntentSyncError(retryError));
+              isMlsGroupNotFoundError(retryError);
 
             if (shouldQuarantineGroup) {
               this.conversations.delete(conversationId);
@@ -2956,8 +2972,14 @@ class XMTPStreamManager {
             }
 
             if (isPublishIntentSyncError(retryError)) {
+              const pagination = this.getPagination(conversationId);
+              this.setPagination(conversationId, {
+                ...pagination,
+                isLoading: false,
+                error: 'This group is out of sync on this device. Try reloading or re-joining.',
+              });
               console.error('[StreamManager] Failed to send message after recovery retry:', retryError);
-              throw new Error('This group is out of sync. Ask to be re-added or recreated.');
+              throw new Error('This group is out of sync on this device. Try reloading or re-joining.');
             }
 
             console.error('[StreamManager] Failed to send message after recovery retry:', retryError);

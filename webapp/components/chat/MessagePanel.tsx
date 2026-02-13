@@ -1957,13 +1957,15 @@ export function MessagePanel({
     if (!message.trim() || isSending) return;
     const content = message.trim();
     const replyToId = replyingTo?.messageId;
-    setMessage("");
-    setReplyingTo(null); // Clear reply state
     setIsSending(true);
     // Always scroll to bottom when sending your own message
     isNearBottomRef.current = true;
     try {
-      await sendMessage(content, replyToId);
+      const success = await sendMessage(content, replyToId);
+      if (success) {
+        setMessage("");
+        setReplyingTo(null); // Clear reply state
+      }
     } catch (error) {
       console.error("Failed to send message:", error);
     } finally {
@@ -2005,16 +2007,19 @@ export function MessagePanel({
     const content = translationPreview.translated;
     const originalText = translationPreview.original;
     const replyToId = replyingTo?.messageId;
-
-    setMessage("");
-    setTranslationPreview(null);
-    setReplyingTo(null);
     setIsSending(true);
     // Always scroll to bottom when sending your own message
     isNearBottomRef.current = true;
 
     try {
-      await sendMessage(content, replyToId);
+      const success = await sendMessage(content, replyToId);
+      if (!success) {
+        return;
+      }
+
+      setMessage("");
+      setTranslationPreview(null);
+      setReplyingTo(null);
       // Cache the original text so we can display it alongside the translation
       // Skip caching for disappearing message conversations
       cacheOriginal(conversationId, content, originalText, hasDisappearingMessages);
