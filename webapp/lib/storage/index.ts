@@ -176,6 +176,18 @@ export interface DatabaseDeletionResult {
   error?: string;
 }
 
+const XMTP_OPTIONAL_OPFS_FILES = new Set<string>([
+  '.opfs-libxmtp-metadata',
+]);
+
+function isXmtpOpfsEntry(name: string): boolean {
+  return name.startsWith('xmtp-') || name.includes('xmtp');
+}
+
+function isOptionalXmtpOpfsEntry(name: string): boolean {
+  return XMTP_OPTIONAL_OPFS_FILES.has(name);
+}
+
 /**
  * Delete ALL XMTP databases in OPFS
  * Use during logout to ensure clean state and allow recovery from corruption
@@ -196,7 +208,7 @@ export async function deleteAllXmtpDatabases(): Promise<DatabaseDeletionResult> 
     // First, collect all files to delete
     // @ts-ignore - entries() exists on FileSystemDirectoryHandle
     for await (const [name] of root.entries()) {
-      if (name.startsWith('xmtp-') || name.includes('xmtp')) {
+      if (isXmtpOpfsEntry(name) && !isOptionalXmtpOpfsEntry(name)) {
         filesToDelete.push(name);
       }
     }
@@ -219,7 +231,7 @@ export async function deleteAllXmtpDatabases(): Promise<DatabaseDeletionResult> 
     const remainingFiles: string[] = [];
     // @ts-ignore
     for await (const [name] of root.entries()) {
-      if (name.startsWith('xmtp-') || name.includes('xmtp')) {
+      if (isXmtpOpfsEntry(name) && !isOptionalXmtpOpfsEntry(name)) {
         remainingFiles.push(name);
       }
     }
