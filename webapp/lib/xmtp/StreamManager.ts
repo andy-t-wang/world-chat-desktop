@@ -288,6 +288,22 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number, operationName: s
   ]);
 }
 
+function isMlsGroupNotFoundError(error: unknown): boolean {
+  const errorLower = String(error).toLowerCase();
+  return (
+    errorLower.includes('mls group not found') ||
+    (errorLower.includes('group not found') && errorLower.includes('mls'))
+  );
+}
+
+function isPublishIntentSyncError(error: unknown): boolean {
+  const errorLower = String(error).toLowerCase();
+  return (
+    errorLower.includes('errors occurred during sync') &&
+    (errorLower.includes('publishing intents') || errorLower.includes('malformed plaintext'))
+  );
+}
+
 // localStorage key for persisting last-read timestamps
 const LAST_READ_TIMESTAMPS_KEY = 'xmtp-last-read-timestamps';
 const PEER_READ_RECEIPTS_KEY = 'xmtp-peer-read-receipts';
@@ -977,15 +993,35 @@ class XMTPStreamManager {
       console.log('[StreamManager] conversations.list() returned', localConversations.length, 'conversations');
 
       const ids: string[] = [];
+      const cacheLoadConversations: Conversation[] = [];
 
       // PHASE 1: Store conversations immediately with placeholder metadata
       // This lets the UI render the list fast
       for (const conv of localConversations) {
+        const isConvDm = isDm(conv);
+        let groupName: string | undefined;
+        let groupImageUrl: string | undefined;
+
+        // Some remote groups can be missing MLS state. Skip them during fast cache load
+        // so one broken group doesn't block the entire conversation list.
+        if (!isConvDm) {
+          try {
+            const groupConv = conv as Group;
+            groupName = groupConv.name;
+            groupImageUrl = groupConv.imageUrl;
+          } catch (error) {
+            if (isMlsGroupNotFoundError(error)) {
+              console.warn('[StreamManager] Skipping unavailable MLS group during cache load:', conv.id);
+              continue;
+            }
+            console.warn('[StreamManager] Failed to read group metadata for', conv.id, error);
+          }
+        }
+
         this.conversations.set(conv.id, conv);
 
         // Create placeholder metadata (fast, no async)
         // Get consent state synchronously to prevent request flicker
-        const isConvDm = isDm(conv);
         let placeholderConsent: 'allowed' | 'denied' | 'unknown' = 'unknown';
         try {
           // consentState() is actually sync in the SDK despite returning Promise
@@ -1000,8 +1036,8 @@ class XMTPStreamManager {
           conversationType: isConvDm ? 'dm' : 'group',
           peerAddress: '',
           peerInboxId: '',
-          groupName: isConvDm ? undefined : (conv as Group).name,
-          groupImageUrl: isConvDm ? undefined : (conv as Group).imageUrl,
+          groupName: isConvDm ? undefined : groupName,
+          groupImageUrl: isConvDm ? undefined : groupImageUrl,
           memberCount: undefined,
           memberPreviews: undefined,
           lastMessagePreview: '', // Will be populated in phase 2
@@ -1012,6 +1048,7 @@ class XMTPStreamManager {
         };
         this.conversationMetadata.set(conv.id, placeholderMetadata);
         ids.push(conv.id);
+        cacheLoadConversations.push(conv);
       }
 
       // If no conversations found locally (fresh install), keep loading state
@@ -1027,7 +1064,7 @@ class XMTPStreamManager {
 
       // PHASE 2: Build full metadata in parallel (background)
       // This runs after UI has rendered
-      const metadataPromises = localConversations.map(async (conv) => {
+      const metadataPromises = cacheLoadConversations.map(async (conv) => {
         try {
           const metadata = await this.buildConversationMetadata(conv, false);
           this.conversationMetadata.set(conv.id, metadata);
@@ -1162,6 +1199,20 @@ class XMTPStreamManager {
       // Rebuild metadata from local DB (no per-conversation sync - too expensive)
       // Individual conversations sync when user opens them
       for (const conv of conversations) {
+        if (!isDm(conv)) {
+          try {
+            // Accessing name can throw for unavailable MLS groups
+            void (conv as Group).name;
+          } catch (error) {
+            if (isMlsGroupNotFoundError(error)) {
+              console.warn('[StreamManager] Skipping unavailable MLS group during initial sync:', conv.id);
+              this.conversations.delete(conv.id);
+              this.conversationMetadata.delete(conv.id);
+              continue;
+            }
+          }
+        }
+
         this.conversations.set(conv.id, conv);
 
         // Build metadata from local DB only (shouldSync=false)
@@ -2027,6 +2078,20 @@ class XMTPStreamManager {
         this.startBackgroundSync(conversationId, conv);
       }
     } catch (error) {
+      if (isMlsGroupNotFoundError(error)) {
+        console.warn('[StreamManager] Conversation unavailable while loading messages:', conversationId);
+        this.conversations.delete(conversationId);
+        this.loadedMessageConversations.delete(conversationId);
+        this.removeConversation(conversationId);
+        this.setPagination(conversationId, {
+          hasMore: false,
+          oldestMessageNs: null,
+          isLoading: false,
+          error: 'This group is no longer available.',
+        });
+        return;
+      }
+
       console.error('[StreamManager] Failed to load messages:', error);
       this.setPagination(conversationId, {
         hasMore: false,
@@ -2115,6 +2180,21 @@ class XMTPStreamManager {
       return true;
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
+
+      if (isMlsGroupNotFoundError(error)) {
+        console.warn('[StreamManager] Conversation unavailable while fetching messages:', conversationId);
+        this.conversations.delete(conversationId);
+        this.loadedMessageConversations.delete(conversationId);
+        this.removeConversation(conversationId);
+        this.setPagination(conversationId, {
+          hasMore: false,
+          oldestMessageNs: null,
+          isLoading: false,
+          error: 'This group is no longer available.',
+        });
+        return true;
+      }
+
       const needsSync = errorMessage.includes('timed out') || errorMessage.includes('epoch');
 
       if (needsSync) {
@@ -2688,22 +2768,63 @@ class XMTPStreamManager {
   }
 
   /**
+   * Refresh conversation reference from network after send-time sync errors
+   */
+  private async refreshConversationReference(conversationId: string): Promise<Conversation | null> {
+    if (!this.client) return null;
+
+    try {
+      await this.client.conversations.sync();
+    } catch (error) {
+      console.warn('[StreamManager] Conversation list sync failed during send recovery:', error);
+    }
+
+    try {
+      const refreshedConversation = await this.client.conversations.getConversationById(conversationId);
+      if (!refreshedConversation) {
+        return null;
+      }
+
+      this.conversations.set(conversationId, refreshedConversation);
+      return refreshedConversation;
+    } catch (error) {
+      if (isMlsGroupNotFoundError(error)) {
+        console.warn('[StreamManager] Conversation not found during send recovery:', conversationId);
+        this.conversations.delete(conversationId);
+        this.removeConversation(conversationId);
+      } else {
+        console.warn('[StreamManager] Failed to refresh conversation for send recovery:', error);
+      }
+      return null;
+    }
+  }
+
+  /**
    * Send a message to a conversation
    */
   async sendMessage(conversationId: string, content: string): Promise<string | null> {
-    const conv = this.conversations.get(conversationId);
-    if (!conv || !content.trim()) return null;
+    const trimmedContent = content.trim();
+    if (!trimmedContent) return null;
 
-    try {
+    let conv = this.conversations.get(conversationId);
+    if (!conv && this.client) {
+      conv = await this.client.conversations.getConversationById(conversationId) ?? undefined;
+      if (conv) {
+        this.conversations.set(conversationId, conv);
+      }
+    }
+    if (!conv) return null;
+
+    const sendWithConversation = async (targetConv: Conversation): Promise<string> => {
       const sentAtNs = BigInt(Date.now()) * 1_000_000n;
-      const messageId = await conv.sendText(content.trim());
+      const messageId = await targetConv.sendText(trimmedContent);
 
       // Add message to cache immediately for optimistic display
       // This prevents the 30+ second delay waiting for stream round-trip
       const optimisticMessage = {
         id: messageId,
         conversationId,
-        content: content.trim(),
+        content: trimmedContent,
         senderInboxId: this.client?.inboxId ?? '',
         sentAtNs,
         contentType: { typeId: 'text', authorityId: 'xmtp.org' },
@@ -2719,7 +2840,7 @@ class XMTPStreamManager {
       // Update conversation metadata with preview
       const metadata = this.conversationMetadata.get(conversationId);
       if (metadata) {
-        metadata.lastMessagePreview = content.trim();
+        metadata.lastMessagePreview = trimmedContent;
         metadata.lastActivityNs = sentAtNs;
         this.incrementMetadataVersion();
         this.resortConversations();
@@ -2731,7 +2852,35 @@ class XMTPStreamManager {
       this.saveLastReadTimestamps();
 
       return messageId;
+    };
+
+    try {
+      return await sendWithConversation(conv);
     } catch (error) {
+      // Recover once for stale group state / sync-intent failures
+      if (isMlsGroupNotFoundError(error) || isPublishIntentSyncError(error)) {
+        console.warn('[StreamManager] Retrying send after conversation refresh:', conversationId);
+        const refreshedConv = await this.refreshConversationReference(conversationId);
+        if (refreshedConv) {
+          try {
+            return await sendWithConversation(refreshedConv);
+          } catch (retryError) {
+            if (isMlsGroupNotFoundError(retryError)) {
+              this.conversations.delete(conversationId);
+              this.removeConversation(conversationId);
+            }
+            console.error('[StreamManager] Failed to send message after recovery retry:', retryError);
+            throw retryError;
+          }
+        }
+
+        if (isMlsGroupNotFoundError(error)) {
+          this.conversations.delete(conversationId);
+          this.removeConversation(conversationId);
+          throw new Error('This group is no longer available. Ask to be re-added.');
+        }
+      }
+
       console.error('[StreamManager] Failed to send message:', error);
       throw error;
     }
