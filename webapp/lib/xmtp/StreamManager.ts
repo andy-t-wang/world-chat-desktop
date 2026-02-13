@@ -969,6 +969,78 @@ class XMTPStreamManager {
   }
 
   /**
+   * List conversations with fallback when one broken MLS group poisons list()
+   */
+  private async listConversationsWithFallback(
+    consentStates: ConsentState[],
+    context: string
+  ): Promise<Conversation[]> {
+    if (!this.client) return [];
+
+    try {
+      return await this.client.conversations.list({ consentStates });
+    } catch (error) {
+      if (!isMlsGroupNotFoundError(error)) {
+        throw error;
+      }
+
+      console.warn(
+        `[StreamManager] conversations.list failed (${context}) due to missing MLS group. Falling back to split listing.`,
+        error
+      );
+
+      let dms: Conversation[] = [];
+      let groups: Conversation[] = [];
+
+      try {
+        dms = await this.client.conversations.listDms({ consentStates });
+      } catch (dmError) {
+        console.warn(`[StreamManager] DM fallback listing failed (${context})`, dmError);
+      }
+
+      try {
+        groups = await this.client.conversations.listGroups({ consentStates });
+      } catch (groupError) {
+        if (isMlsGroupNotFoundError(groupError)) {
+          console.warn(
+            `[StreamManager] Group fallback listing failed (${context}) due to missing MLS group. Continuing with DMs only.`
+          );
+        } else {
+          console.warn(`[StreamManager] Group fallback listing failed (${context})`, groupError);
+        }
+      }
+
+      const deduped = new Map<string, Conversation>();
+      for (const conversation of [...dms, ...groups]) {
+        deduped.set(conversation.id, conversation);
+      }
+
+      return Array.from(deduped.values());
+    }
+  }
+
+  /**
+   * syncAll can fail globally due to a single missing MLS group.
+   * Treat that as non-fatal so healthy conversations can continue.
+   */
+  private async syncAllWithMlsFallback(consentStates: ConsentState[], context: string): Promise<void> {
+    if (!this.client) return;
+
+    try {
+      await this.client.conversations.syncAll(consentStates);
+    } catch (error) {
+      if (isMlsGroupNotFoundError(error)) {
+        console.warn(
+          `[StreamManager] syncAll skipped (${context}) due to missing MLS group. Continuing.`,
+          error
+        );
+        return;
+      }
+      throw error;
+    }
+  }
+
+  /**
    * Load conversations from local cache (no network)
    * Uses two-phase loading for faster initial render:
    * Phase 1: Show conversation list immediately with minimal metadata
@@ -987,9 +1059,10 @@ class XMTPStreamManager {
       // Include both Allowed and Unknown so we don't miss conversations
       // that were Allowed on another device but haven't synced consent yet
       console.log('[StreamManager] Calling client.conversations.list()...');
-      const localConversations = await this.client.conversations.list({
-        consentStates: [ConsentState.Allowed, ConsentState.Unknown],
-      });
+      const localConversations = await this.listConversationsWithFallback(
+        [ConsentState.Allowed, ConsentState.Unknown],
+        'cache-load'
+      );
       console.log('[StreamManager] conversations.list() returned', localConversations.length, 'conversations');
 
       const ids: string[] = [];
@@ -1179,18 +1252,19 @@ class XMTPStreamManager {
       await this.client.conversations.sync();
 
       // Priority 1: Sync Allowed conversations first (these are the important ones)
-      await this.client.conversations.syncAll([ConsentState.Allowed]);
+      await this.syncAllWithMlsFallback([ConsentState.Allowed], 'initial-sync-allowed');
 
       // Priority 2: Sync Unknown conversations (message requests)
-      await this.client.conversations.syncAll([ConsentState.Unknown]);
+      await this.syncAllWithMlsFallback([ConsentState.Unknown], 'initial-sync-unknown');
 
       // Trigger re-render after syncing requests (important for fresh installs)
       this.incrementMetadataVersion();
 
       // Re-list to get any new conversations
-      const conversations = await this.client.conversations.list({
-        consentStates: [ConsentState.Allowed, ConsentState.Unknown],
-      });
+      const conversations = await this.listConversationsWithFallback(
+        [ConsentState.Allowed, ConsentState.Unknown],
+        'initial-sync-list'
+      );
 
       const currentIds = store.get(conversationIdsAtom);
       const currentIdSet = new Set(currentIds);
@@ -1293,12 +1367,13 @@ class XMTPStreamManager {
 
     try {
       // Sync Unknown conversations specifically
-      await this.client.conversations.syncAll([ConsentState.Unknown]);
+      await this.syncAllWithMlsFallback([ConsentState.Unknown], 'message-requests');
 
       // Re-list Unknown conversations
-      const unknownConversations = await this.client.conversations.list({
-        consentStates: [ConsentState.Unknown],
-      });
+      const unknownConversations = await this.listConversationsWithFallback(
+        [ConsentState.Unknown],
+        'message-requests-list'
+      );
 
       // Rebuild metadata for these conversations
       for (const conv of unknownConversations) {
@@ -2865,10 +2940,26 @@ class XMTPStreamManager {
           try {
             return await sendWithConversation(refreshedConv);
           } catch (retryError) {
-            if (isMlsGroupNotFoundError(retryError)) {
+            const shouldQuarantineGroup =
+              !isDm(refreshedConv) &&
+              (isMlsGroupNotFoundError(retryError) || isPublishIntentSyncError(retryError));
+
+            if (shouldQuarantineGroup) {
               this.conversations.delete(conversationId);
               this.removeConversation(conversationId);
+              const pagination = this.getPagination(conversationId);
+              this.setPagination(conversationId, {
+                ...pagination,
+                isLoading: false,
+                error: 'This group is out of sync. Ask to be re-added.',
+              });
             }
+
+            if (isPublishIntentSyncError(retryError)) {
+              console.error('[StreamManager] Failed to send message after recovery retry:', retryError);
+              throw new Error('This group is out of sync. Ask to be re-added or recreated.');
+            }
+
             console.error('[StreamManager] Failed to send message after recovery retry:', retryError);
             throw retryError;
           }
@@ -2878,6 +2969,10 @@ class XMTPStreamManager {
           this.conversations.delete(conversationId);
           this.removeConversation(conversationId);
           throw new Error('This group is no longer available. Ask to be re-added.');
+        }
+
+        if (isPublishIntentSyncError(error)) {
+          throw new Error('This group is out of sync. Ask to be re-added or recreated.');
         }
       }
 
