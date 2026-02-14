@@ -436,6 +436,8 @@ export default function ChatPage() {
               memberPreviews={conversationMetadata.memberPreviews}
               avatarUrl={conversationMetadata.groupImageUrl}
               isMessageRequest={isMessageRequest}
+              isConversationDisabled={conversationMetadata.isDisabled}
+              disabledReason={conversationMetadata.disabledReason}
               isVerified={isGroupVerified}
               verifiedCount={verifiedCount}
               unverifiedCount={unverifiedCount}
@@ -453,6 +455,8 @@ export default function ChatPage() {
               peerInboxId={conversationMetadata.peerInboxId}
               isVerified={isPeerVerified}
               isMessageRequest={isMessageRequest}
+              isConversationDisabled={conversationMetadata.isDisabled}
+              disabledReason={conversationMetadata.disabledReason}
               hasDisappearingMessages={conversationMetadata.disappearingMessagesEnabled}
               onOpenPeerProfile={handleOpenPeerProfile}
               onBack={handleBack}

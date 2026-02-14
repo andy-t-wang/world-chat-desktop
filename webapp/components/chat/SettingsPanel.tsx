@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useAtom } from "jotai";
+import { useAtom, useSetAtom } from "jotai";
 import { usePrivy, useWallets } from "@privy-io/react-auth";
 import {
   ArrowLeft,
@@ -47,6 +47,7 @@ import {
   deleteAllXmtpDatabases,
   type DatabaseDeletionResult,
 } from "@/lib/storage";
+import { clientLifecycleAtom } from "@/stores/client";
 
 interface SettingsPanelProps {
   onClose: () => void;
@@ -72,6 +73,7 @@ function Toggle({ enabled }: { enabled: boolean }) {
 }
 
 export function SettingsPanel({ onClose }: SettingsPanelProps) {
+  const dispatchClientLifecycle = useSetAtom(clientLifecycleAtom);
   const [linkPreviewEnabled, setLinkPreviewEnabled] = useAtom(linkPreviewEnabledAtom);
   const [soundMuted, setSoundMuted] = useAtom(soundMutedAtom);
   const [hideEmptyConversations, setHideEmptyConversations] = useAtom(hideEmptyConversationsAtom);
@@ -179,6 +181,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
 
     try {
       streamManager.cleanup();
+      dispatchClientLifecycle({ type: "DISCONNECT" });
       clearSession();
       await clearSessionCache();
 
@@ -211,6 +214,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
 
   const handleForceLogout = () => {
     // Force logout without clearing data
+    dispatchClientLifecycle({ type: "DISCONNECT" });
     setDeletionError(null);
     window.location.href = "/";
   };

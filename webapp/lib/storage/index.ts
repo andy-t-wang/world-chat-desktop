@@ -208,7 +208,7 @@ export async function deleteAllXmtpDatabases(): Promise<DatabaseDeletionResult> 
     // First, collect all files to delete
     // @ts-ignore - entries() exists on FileSystemDirectoryHandle
     for await (const [name] of root.entries()) {
-      if (isXmtpOpfsEntry(name) && !isOptionalXmtpOpfsEntry(name)) {
+      if (isXmtpOpfsEntry(name)) {
         filesToDelete.push(name);
       }
     }
@@ -222,6 +222,11 @@ export async function deleteAllXmtpDatabases(): Promise<DatabaseDeletionResult> 
         deletedFiles.push(name);
         console.log('[Storage] Deleted:', name);
       } catch (error) {
+        if (isOptionalXmtpOpfsEntry(name)) {
+          // Best-effort cleanup for optional metadata file.
+          console.warn('[Storage] Optional XMTP metadata file could not be deleted:', name, error);
+          continue;
+        }
         failedFiles.push(name);
         console.error('[Storage] Failed to delete:', name, error);
       }

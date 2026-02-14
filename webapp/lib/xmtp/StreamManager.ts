@@ -76,6 +76,9 @@ interface ConversationMetadata {
   disappearingMessagesDurationNs?: bigint;
   // Mention tracking - true if user was @mentioned in unread messages
   hasMention?: boolean;
+  // Disabled conversations can be viewed but not sent to (requires re-add/recreate)
+  isDisabled?: boolean;
+  disabledReason?: string;
 }
 
 // Check if a conversation is a DM
@@ -275,6 +278,9 @@ const FALLBACK_SYNC_INTERVAL_MS = 60000; // Sync every 60 seconds when degraded
 // Messages should load from local cache almost instantly - if it takes >3s something is wrong
 const XMTP_OPERATION_TIMEOUT_MS = 3000; // 3 seconds max
 const XMTP_SEND_TIMEOUT_MS = 15000; // 15 seconds max for send operations
+const XMTP_RECOVERY_TIMEOUT_MS = 8000; // 8 seconds max for recovery sync steps
+const MEMBER_LOOKUP_RETRY_MS = 60_000; // Back off failed inbox lookups for 60s
+const DEFAULT_DISABLED_GROUP_REASON = 'This group is disabled on this device. Ask to be re-added.';
 
 /**
  * Wrap a promise with a timeout to prevent infinite hangs
@@ -289,8 +295,51 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number, operationName: s
   ]);
 }
 
+function getErrorSearchText(error: unknown): string {
+  const seen = new WeakSet<object>();
+
+  const visit = (value: unknown, depth: number): string => {
+    if (depth > 4) return '';
+
+    if (value instanceof Error) {
+      const err = value as Error & { cause?: unknown };
+      const cause = visit(err.cause, depth + 1);
+      return [err.name, err.message, err.stack ?? '', cause].filter(Boolean).join('\n');
+    }
+
+    if (typeof value === 'string') {
+      return value;
+    }
+
+    if (typeof value === 'object' && value !== null) {
+      if (seen.has(value)) return '';
+      seen.add(value);
+
+      const record = value as Record<string, unknown>;
+      const fields = ['message', 'error', 'details', 'summary', 'reason', 'description', 'code', 'cause'];
+      const picked = fields
+        .map((field) => visit(record[field], depth + 1))
+        .filter(Boolean)
+        .join('\n');
+
+      let serialized = '';
+      try {
+        serialized = JSON.stringify(value);
+      } catch {
+        // Ignore serialization errors
+      }
+
+      return [picked, serialized].filter(Boolean).join('\n');
+    }
+
+    return String(value);
+  };
+
+  return visit(error, 0);
+}
+
 function isMlsGroupNotFoundError(error: unknown): boolean {
-  const errorLower = String(error).toLowerCase();
+  const errorLower = getErrorSearchText(error).toLowerCase();
   return (
     errorLower.includes('mls group not found') ||
     (errorLower.includes('group not found') && errorLower.includes('mls'))
@@ -298,7 +347,7 @@ function isMlsGroupNotFoundError(error: unknown): boolean {
 }
 
 function isPublishIntentSyncError(error: unknown): boolean {
-  const errorLower = String(error).toLowerCase();
+  const errorLower = getErrorSearchText(error).toLowerCase();
   return (
     errorLower.includes('errors occurred during sync') &&
     (errorLower.includes('publishing intents') || errorLower.includes('malformed plaintext'))
@@ -530,6 +579,7 @@ class XMTPStreamManager {
 
   // Store conversation metadata (not in atoms to avoid re-renders)
   private conversationMetadata = new Map<string, ConversationMetadata>();
+  private disabledConversationReasons = new Map<string, string>();
 
   // Store conversation instances for reuse
   private conversations = new Map<string, Conversation>();
@@ -555,6 +605,8 @@ class XMTPStreamManager {
 
   // Cache of inboxId -> address for all members we've seen (persists even after removal)
   private memberAddressCache = new Map<string, string>();
+  private memberAddressLookupInFlight = new Map<string, Promise<string | null>>();
+  private memberAddressLookupFailures = new Map<string, number>();
 
   // Periodic history sync interval (to respond to new installation sync requests)
   private historySyncInterval: ReturnType<typeof setInterval> | null = null;
@@ -608,7 +660,7 @@ class XMTPStreamManager {
    * If so, set the flag and log for user guidance
    */
   private checkForDatabaseCorruption(error: unknown): boolean {
-    const errorStr = String(error);
+    const errorStr = getErrorSearchText(error);
     const errorLower = errorStr.toLowerCase();
     const state = {
       translationInProgress: this.translationInProgress,
@@ -621,14 +673,23 @@ class XMTPStreamManager {
     console.error(`[StreamManager] XMTP Error:`, errorStr, state);
     window.electronAPI?.debugLog?.('StreamManager', 'XMTP Error', { error: errorStr, state });
 
-    if (
+    const hasSqlCorruptionSignature =
       errorLower.includes('database disk image is malformed') ||
       errorLower.includes('sqlite_corrupt') ||
       (errorLower.includes('sqlkeystore') && errorLower.includes('malformed')) ||
-      (errorLower.includes('welcome error') && errorLower.includes('querying storage'))
-    ) {
+      (errorLower.includes('welcome error') && errorLower.includes('querying storage'));
+
+    const hasMlsStorageCorruptionSignature =
+      (errorLower.includes('malformed plaintext') &&
+        (errorLower.includes('publishing intents') || errorLower.includes('createmessage'))) ||
+      (errorLower.includes('keypackagegenerationerror') && errorLower.includes('storageerror'));
+
+    if (hasSqlCorruptionSignature || hasMlsStorageCorruptionSignature) {
       console.error('[StreamManager] *** DATABASE CORRUPTION DETECTED ***');
-      window.electronAPI?.debugLog?.('StreamManager', '*** DATABASE CORRUPTION DETECTED ***', state);
+      window.electronAPI?.debugLog?.('StreamManager', '*** DATABASE CORRUPTION DETECTED ***', {
+        ...state,
+        error: errorStr,
+      });
       this.triggerCorruptionRecovery();
       return true;
     }
@@ -653,6 +714,13 @@ class XMTPStreamManager {
       } catch {
         // Ignore localStorage write errors
       }
+    }
+
+    // Ensure XMTP worker is closed so OPFS handles are released before DB clear.
+    try {
+      this.client?.close();
+    } catch (error) {
+      console.warn('[StreamManager] Failed to close XMTP client during corruption recovery:', error);
     }
 
     // Stop all stream work to avoid retry loops on corrupted DB.
@@ -2088,6 +2156,67 @@ class XMTPStreamManager {
     return map.get(conversationId) ?? { hasMore: true, oldestMessageNs: null, isLoading: false };
   }
 
+  private markConversationDisabled(conversationId: string, reason: string): void {
+    const disabledReason = reason.trim() || DEFAULT_DISABLED_GROUP_REASON;
+    const existingReason = this.disabledConversationReasons.get(conversationId);
+    if (existingReason === disabledReason) {
+      return;
+    }
+
+    this.disabledConversationReasons.set(conversationId, disabledReason);
+
+    const metadata = this.conversationMetadata.get(conversationId);
+    if (metadata) {
+      metadata.isDisabled = true;
+      metadata.disabledReason = disabledReason;
+    }
+
+    this.incrementMetadataVersion();
+  }
+
+  private clearConversationDisabled(conversationId: string): void {
+    if (!this.disabledConversationReasons.has(conversationId)) {
+      return;
+    }
+
+    this.disabledConversationReasons.delete(conversationId);
+
+    const metadata = this.conversationMetadata.get(conversationId);
+    if (metadata) {
+      delete metadata.isDisabled;
+      delete metadata.disabledReason;
+    }
+
+    this.incrementMetadataVersion();
+  }
+
+  private withDisabledState(
+    conversationId: string,
+    metadata: ConversationMetadata
+  ): ConversationMetadata {
+    const disabledReason = this.disabledConversationReasons.get(conversationId);
+    if (!disabledReason) {
+      if (!metadata.isDisabled && !metadata.disabledReason) {
+        return metadata;
+      }
+      return {
+        ...metadata,
+        isDisabled: undefined,
+        disabledReason: undefined,
+      };
+    }
+
+    if (metadata.isDisabled && metadata.disabledReason === disabledReason) {
+      return metadata;
+    }
+
+    return {
+      ...metadata,
+      isDisabled: true,
+      disabledReason,
+    };
+  }
+
   /**
    * Helper to get message IDs for a conversation
    */
@@ -2158,12 +2287,12 @@ class XMTPStreamManager {
         console.warn('[StreamManager] Conversation unavailable while loading messages:', conversationId);
         this.conversations.delete(conversationId);
         this.loadedMessageConversations.delete(conversationId);
-        this.removeConversation(conversationId);
+        this.markConversationDisabled(conversationId, DEFAULT_DISABLED_GROUP_REASON);
         this.setPagination(conversationId, {
           hasMore: false,
           oldestMessageNs: null,
           isLoading: false,
-          error: 'This group is no longer available.',
+          error: DEFAULT_DISABLED_GROUP_REASON,
         });
         return;
       }
@@ -2252,6 +2381,7 @@ class XMTPStreamManager {
         oldestMessageNs,
         isLoading: false,
       });
+      this.clearConversationDisabled(conversationId);
 
       return true;
     } catch (error) {
@@ -2261,12 +2391,12 @@ class XMTPStreamManager {
         console.warn('[StreamManager] Conversation unavailable while fetching messages:', conversationId);
         this.conversations.delete(conversationId);
         this.loadedMessageConversations.delete(conversationId);
-        this.removeConversation(conversationId);
+        this.markConversationDisabled(conversationId, DEFAULT_DISABLED_GROUP_REASON);
         this.setPagination(conversationId, {
           hasMore: false,
           oldestMessageNs: null,
           isLoading: false,
-          error: 'This group is no longer available.',
+          error: DEFAULT_DISABLED_GROUP_REASON,
         });
         return true;
       }
@@ -2860,7 +2990,15 @@ class XMTPStreamManager {
     }
 
     // Best-effort full sync for allowed conversations to refresh MLS state
-    await this.syncAllWithMlsFallback([ConsentState.Allowed], 'send-recovery');
+    try {
+      await withTimeout(
+        this.syncAllWithMlsFallback([ConsentState.Allowed], 'send-recovery'),
+        XMTP_RECOVERY_TIMEOUT_MS,
+        'sendRecovery.syncAll'
+      );
+    } catch (error) {
+      console.warn('[StreamManager] syncAll failed during send recovery:', error);
+    }
 
     try {
       const refreshedConversation = await withTimeout(
@@ -2878,7 +3016,14 @@ class XMTPStreamManager {
       if (isMlsGroupNotFoundError(error)) {
         console.warn('[StreamManager] Conversation not found during send recovery:', conversationId);
         this.conversations.delete(conversationId);
-        this.removeConversation(conversationId);
+        this.loadedMessageConversations.delete(conversationId);
+        this.markConversationDisabled(conversationId, DEFAULT_DISABLED_GROUP_REASON);
+        const pagination = this.getPagination(conversationId);
+        this.setPagination(conversationId, {
+          ...pagination,
+          isLoading: false,
+          error: DEFAULT_DISABLED_GROUP_REASON,
+        });
       } else {
         console.warn('[StreamManager] Failed to refresh conversation for send recovery:', error);
       }
@@ -2892,6 +3037,9 @@ class XMTPStreamManager {
   async sendMessage(conversationId: string, content: string): Promise<string | null> {
     const trimmedContent = content.trim();
     if (!trimmedContent) return null;
+    if (this.databaseCorrupted) {
+      throw new Error('Local message database is corrupted. Reload to repair.');
+    }
 
     let conv = this.conversations.get(conversationId);
     if (!conv && this.client) {
@@ -2909,6 +3057,7 @@ class XMTPStreamManager {
         XMTP_SEND_TIMEOUT_MS,
         'sendText'
       );
+      this.clearConversationDisabled(conversationId);
 
       // Add message to cache immediately for optimistic display
       // This prevents the 30+ second delay waiting for stream round-trip
@@ -2948,6 +3097,10 @@ class XMTPStreamManager {
     try {
       return await sendWithConversation(conv);
     } catch (error) {
+      if (this.checkForDatabaseCorruption(error)) {
+        throw new Error('Local message database is corrupted. Reload to repair.');
+      }
+
       // Recover once for stale group state / sync-intent failures
       if (isMlsGroupNotFoundError(error) || isPublishIntentSyncError(error)) {
         console.warn('[StreamManager] Retrying send after conversation refresh:', conversationId);
@@ -2956,30 +3109,35 @@ class XMTPStreamManager {
           try {
             return await sendWithConversation(refreshedConv);
           } catch (retryError) {
+            if (this.checkForDatabaseCorruption(retryError)) {
+              throw new Error('Local message database is corrupted. Reload to repair.');
+            }
+
             const shouldQuarantineGroup =
               !isDm(refreshedConv) &&
               isMlsGroupNotFoundError(retryError);
 
             if (shouldQuarantineGroup) {
-              this.conversations.delete(conversationId);
-              this.removeConversation(conversationId);
+              this.markConversationDisabled(conversationId, DEFAULT_DISABLED_GROUP_REASON);
               const pagination = this.getPagination(conversationId);
               this.setPagination(conversationId, {
                 ...pagination,
                 isLoading: false,
-                error: 'This group is out of sync. Ask to be re-added.',
+                error: DEFAULT_DISABLED_GROUP_REASON,
               });
             }
 
             if (isPublishIntentSyncError(retryError)) {
+              const disabledReason = 'This group is out of sync on this device. Ask to be re-added.';
+              this.markConversationDisabled(conversationId, disabledReason);
               const pagination = this.getPagination(conversationId);
               this.setPagination(conversationId, {
                 ...pagination,
                 isLoading: false,
-                error: 'This group is out of sync on this device. Try reloading or re-joining.',
+                error: disabledReason,
               });
               console.error('[StreamManager] Failed to send message after recovery retry:', retryError);
-              throw new Error('This group is out of sync on this device. Try reloading or re-joining.');
+              throw new Error(disabledReason);
             }
 
             console.error('[StreamManager] Failed to send message after recovery retry:', retryError);
@@ -2989,12 +3147,27 @@ class XMTPStreamManager {
 
         if (isMlsGroupNotFoundError(error)) {
           this.conversations.delete(conversationId);
-          this.removeConversation(conversationId);
-          throw new Error('This group is no longer available. Ask to be re-added.');
+          this.loadedMessageConversations.delete(conversationId);
+          this.markConversationDisabled(conversationId, DEFAULT_DISABLED_GROUP_REASON);
+          const pagination = this.getPagination(conversationId);
+          this.setPagination(conversationId, {
+            ...pagination,
+            isLoading: false,
+            error: DEFAULT_DISABLED_GROUP_REASON,
+          });
+          throw new Error(DEFAULT_DISABLED_GROUP_REASON);
         }
 
         if (isPublishIntentSyncError(error)) {
-          throw new Error('This group is out of sync. Ask to be re-added or recreated.');
+          const disabledReason = 'This group is out of sync on this device. Ask to be re-added.';
+          this.markConversationDisabled(conversationId, disabledReason);
+          const pagination = this.getPagination(conversationId);
+          this.setPagination(conversationId, {
+            ...pagination,
+            isLoading: false,
+            error: disabledReason,
+          });
+          throw new Error(disabledReason);
         }
       }
 
@@ -3112,6 +3285,9 @@ class XMTPStreamManager {
   ): Promise<string | null> {
     const conv = this.conversations.get(conversationId);
     if (!conv || !content.trim()) return null;
+    if (this.databaseCorrupted) {
+      throw new Error('Local message database is corrupted. Reload to repair.');
+    }
 
     try {
       const sentAtNs = BigInt(Date.now()) * 1_000_000n;
@@ -3127,7 +3303,11 @@ class XMTPStreamManager {
       };
 
       // Use new v6 sendReply API
-      const messageId = await conv.sendReply(reply);
+      const messageId = await withTimeout(
+        conv.sendReply(reply),
+        XMTP_SEND_TIMEOUT_MS,
+        'sendReply'
+      );
 
       // Add message to cache immediately for optimistic display
       const optimisticMessage = {
@@ -3161,6 +3341,9 @@ class XMTPStreamManager {
 
       return messageId;
     } catch (error) {
+      if (this.checkForDatabaseCorruption(error)) {
+        throw new Error('Local message database is corrupted. Reload to repair.');
+      }
       console.error('[StreamManager] Failed to send reply:', error);
       throw error;
     }
@@ -3305,14 +3488,20 @@ class XMTPStreamManager {
    * Get metadata for a conversation
    */
   getConversationMetadata(conversationId: string): ConversationMetadata | undefined {
-    return this.conversationMetadata.get(conversationId);
+    const metadata = this.conversationMetadata.get(conversationId);
+    if (!metadata) return undefined;
+    return this.withDisabledState(conversationId, metadata);
   }
 
   /**
    * Get all conversation metadata as a Map
    */
   getAllConversationMetadata(): Map<string, ConversationMetadata> {
-    return new Map(this.conversationMetadata);
+    const result = new Map<string, ConversationMetadata>();
+    for (const [conversationId, metadata] of this.conversationMetadata.entries()) {
+      result.set(conversationId, this.withDisabledState(conversationId, metadata));
+    }
+    return result;
   }
 
   /**
@@ -3357,31 +3546,53 @@ class XMTPStreamManager {
     const cached = this.memberAddressCache.get(inboxId);
     if (cached) return cached;
 
+    const lastFailure = this.memberAddressLookupFailures.get(inboxId);
+    if (lastFailure && Date.now() - lastFailure < MEMBER_LOOKUP_RETRY_MS) {
+      return null;
+    }
+
+    const inFlight = this.memberAddressLookupInFlight.get(inboxId);
+    if (inFlight) {
+      return inFlight;
+    }
+
     // Look up from XMTP
     if (!this.client) return null;
 
-    try {
-      // Use preferences.getInboxStates API (gets from local cache)
-      // or preferences.fetchInboxStates (fetches from network)
-      const inboxStates = await this.client.preferences.getInboxStates([inboxId]);
-      if (inboxStates.length > 0) {
-        const state = inboxStates[0];
-        // Get first Ethereum identifier from accountIdentifiers
-        const ethIdentifier = state.accountIdentifiers?.find(
-          (id: { identifier: string; identifierKind: IdentifierKind }) =>
-            id.identifierKind === IdentifierKind.Ethereum
-        );
-        if (ethIdentifier?.identifier) {
-          // Cache it
-          this.memberAddressCache.set(inboxId, ethIdentifier.identifier);
-          return ethIdentifier.identifier;
+    const lookupPromise = (async () => {
+      try {
+        // Use preferences.getInboxStates API (gets from local cache)
+        // or preferences.fetchInboxStates (fetches from network)
+        const inboxStates = await this.client?.preferences.getInboxStates([inboxId]);
+        if (inboxStates && inboxStates.length > 0) {
+          const state = inboxStates[0];
+          // Get first Ethereum identifier from accountIdentifiers
+          const ethIdentifier = state.accountIdentifiers?.find(
+            (id: { identifier: string; identifierKind: IdentifierKind }) =>
+              id.identifierKind === IdentifierKind.Ethereum
+          );
+          if (ethIdentifier?.identifier) {
+            // Cache it
+            this.memberAddressCache.set(inboxId, ethIdentifier.identifier);
+            this.memberAddressLookupFailures.delete(inboxId);
+            return ethIdentifier.identifier;
+          }
         }
+      } catch (error) {
+        this.memberAddressLookupFailures.set(inboxId, Date.now());
+        this.checkForDatabaseCorruption(error);
+        console.error('[StreamManager] Failed to look up inbox ID:', error);
       }
-    } catch (error) {
-      console.error('[StreamManager] Failed to look up inbox ID:', error);
-    }
 
-    return null;
+      return null;
+    })();
+
+    this.memberAddressLookupInFlight.set(inboxId, lookupPromise);
+    try {
+      return await lookupPromise;
+    } finally {
+      this.memberAddressLookupInFlight.delete(inboxId);
+    }
   }
 
   /**
@@ -3483,6 +3694,7 @@ class XMTPStreamManager {
   removeConversation(conversationId: string): void {
     // Remove from metadata
     this.conversationMetadata.delete(conversationId);
+    this.disabledConversationReasons.delete(conversationId);
 
     // Remove from conversation IDs list
     const currentIds = store.get(conversationIdsAtom);
@@ -4355,6 +4567,13 @@ class XMTPStreamManager {
     this.allMessagesStreamController?.abort();
     this.allMessagesStreamController = null;
 
+    // Close XMTP worker to release OPFS handles before resetting or logout.
+    try {
+      this.client?.close();
+    } catch (error) {
+      console.warn('[StreamManager] Failed to close XMTP client during cleanup:', error);
+    }
+
     // Reset state
     this.client = null;
     this.conversationsLoaded = false;
@@ -4362,6 +4581,9 @@ class XMTPStreamManager {
     this.loadedMessageConversations.clear();
     this.conversationMetadata.clear();
     this.conversations.clear();
+    this.disabledConversationReasons.clear();
+    this.memberAddressLookupInFlight.clear();
+    this.memberAddressLookupFailures.clear();
 
     // Reset restart counters
     this.conversationStreamRestarts = 0;

@@ -219,7 +219,7 @@ export function ConversationList({
       // Filter out empty conversations if setting is enabled
       if (hideEmptyConversations) {
         const isEmpty = !data.lastMessagePreview && data.lastActivityNs === BigInt(0);
-        if (isEmpty) return false;
+        if (isEmpty && !data.isDisabled) return false;
       }
 
       return true;
@@ -345,6 +345,8 @@ export function ConversationList({
       hasMention: data.hasMention ?? false,
       isPinned: pinnedSet.has(id),
       isMuted: mutedSet.has(id),
+      isDisabled: data.isDisabled ?? false,
+      disabledReason: data.disabledReason,
     };
 
     // Add type-specific props
@@ -635,4 +637,3 @@ export function ConversationList({
     </div>
   );
 }
-

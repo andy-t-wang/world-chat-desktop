@@ -997,6 +997,8 @@ interface MessagePanelProps {
   unverifiedCount?: number;
   memberPreviews?: MemberPreview[];
   isMessageRequest?: boolean;
+  isConversationDisabled?: boolean;
+  disabledReason?: string;
   hasDisappearingMessages?: boolean;
   onOpenGroupDetails?: () => void;
   onMemberAvatarClick?: (address: string, inboxId: string) => void;
@@ -1019,6 +1021,8 @@ export function MessagePanel({
   unverifiedCount,
   memberPreviews,
   isMessageRequest = false,
+  isConversationDisabled = false,
+  disabledReason,
   hasDisappearingMessages = false,
   onOpenGroupDetails,
   onMemberAvatarClick,
@@ -1204,6 +1208,10 @@ export function MessagePanel({
     getMessage,
     retryConversation,
   } = useMessages(conversationId);
+
+  const disabledMessage = isConversationDisabled
+    ? (disabledReason || "This group is disabled on this device. Ask to be re-added.")
+    : null;
 
   const ownInboxId = client?.inboxId ?? "";
   const textDecoderRef = useRef<TextDecoder | null>(null);
@@ -1954,6 +1962,7 @@ export function MessagePanel({
   }, [hasMore, isLoading, loadMore, updateNearBottom]);
 
   const handleSend = async () => {
+    if (disabledMessage) return;
     if (!message.trim() || isSending) return;
     const content = message.trim();
     const replyToId = replyingTo?.messageId;
@@ -2002,6 +2011,7 @@ export function MessagePanel({
 
   // Send the translated message
   const handleSendTranslated = async () => {
+    if (disabledMessage) return;
     if (!translationPreview || isSending) return;
 
     const content = translationPreview.translated;
@@ -2050,6 +2060,7 @@ export function MessagePanel({
 
   // Unified send handler that respects translation settings
   const handleSendWithTranslation = () => {
+    if (disabledMessage) return;
     // If preview is showing, send the translated message
     if (translationPreview) {
       handleSendTranslated();
@@ -2359,7 +2370,18 @@ export function MessagePanel({
             peerAddress={peerAddress}
           />
         )}
-        {conversationError ? (
+        {disabledMessage ? (
+          <div className="flex items-center justify-center h-full p-4">
+            <div className="bg-[var(--bg-secondary)] border border-[var(--border-subtle)] rounded-xl p-4 text-center max-w-[360px]">
+              <div className="text-[15px] text-[var(--text-primary)] mb-2 font-medium">
+                Group disabled on this device
+              </div>
+              <p className="text-[13px] text-[var(--text-secondary)]">
+                {disabledMessage}
+              </p>
+            </div>
+          </div>
+        ) : conversationError ? (
           <div className="flex items-center justify-center h-full p-4">
             <div className="bg-[var(--bg-secondary)] border border-[var(--border-subtle)] rounded-xl p-4 text-center max-w-[320px]">
               <div className="text-[15px] text-[var(--text-primary)] mb-2 font-medium">
@@ -3552,7 +3574,7 @@ export function MessagePanel({
       </div>
 
       {/* Reply Preview */}
-      {replyingTo && !isMessageRequest && (
+      {replyingTo && !isMessageRequest && !disabledMessage && (
         <ReplyPreview
           senderAddress={replyingTo.senderAddress}
           content={replyingTo.content}
@@ -3561,7 +3583,7 @@ export function MessagePanel({
       )}
 
       {/* Translation Preview */}
-      {translationPreview && !isMessageRequest && (
+      {translationPreview && !isMessageRequest && !disabledMessage && (
         <div className="shrink-0 px-4 py-2 border-t border-[var(--border-default)] bg-[var(--bg-secondary)]">
           <div className="flex items-center justify-between mb-1">
             <span className="text-[12px] text-[var(--text-tertiary)] flex items-center gap-1">
@@ -3582,6 +3604,13 @@ export function MessagePanel({
           <div className="flex items-center justify-center gap-2 py-1">
             <Lock className="w-4 h-4 text-[var(--text-quaternary)]" />
             <span className="text-[14px] text-[var(--text-quaternary)]">Accept the request above to send a message</span>
+          </div>
+        </div>
+      ) : disabledMessage ? (
+        <div className="shrink-0 px-4 py-3 border-t border-[var(--border-default)] bg-[var(--bg-secondary)]">
+          <div className="flex items-center justify-center gap-2 py-1">
+            <AlertCircle className="w-4 h-4 text-[var(--text-quaternary)]" />
+            <span className="text-[14px] text-[var(--text-quaternary)]">{disabledMessage}</span>
           </div>
         </div>
       ) : (

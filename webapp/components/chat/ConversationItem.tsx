@@ -1,6 +1,6 @@
 'use client';
 
-import { Pin, BellOff, Image, Video, Ban } from 'lucide-react';
+import { Pin, BellOff, Image, Video, Ban, AlertTriangle } from 'lucide-react';
 import { Avatar } from '@/components/ui/Avatar';
 import { VerificationBadge } from '@/components/ui/VerificationBadge';
 import { useDisplayName } from '@/hooks/useDisplayName';
@@ -43,11 +43,22 @@ export interface ConversationItemProps {
   hasDisappearingMessages?: boolean;
   /** Whether user was @mentioned in unread messages */
   hasMention?: boolean;
+  isDisabled?: boolean;
+  disabledReason?: string;
   onClick?: () => void;
 }
 
 function formatPreview(props: ConversationItemProps): React.ReactNode {
-  const { isTyping, typingUser, lastMessageType, lastMessage, reactionEmoji, reactionTarget } = props;
+  const { isTyping, typingUser, lastMessageType, lastMessage, reactionEmoji, reactionTarget, isDisabled } = props;
+
+  if (isDisabled) {
+    return (
+      <span className="flex items-center gap-1.5">
+        <AlertTriangle className="w-3.5 h-3.5" />
+        Group disabled. Re-add required.
+      </span>
+    );
+  }
 
   if (isTyping) {
     return (
@@ -69,7 +80,7 @@ function formatPreview(props: ConversationItemProps): React.ReactNode {
   if (lastMessageType === 'reaction' && reactionEmoji) {
     return (
       <span>
-        You reacted {reactionEmoji} to "{reactionTarget}"
+        You reacted {reactionEmoji} to &quot;{reactionTarget}&quot;
       </span>
     );
   }
@@ -112,6 +123,8 @@ export function ConversationItem(props: ConversationItemProps) {
     isNewRequest = false,
     hasDisappearingMessages = false,
     hasMention = false,
+    isDisabled = false,
+    disabledReason,
     onClick,
   } = props;
 
@@ -134,11 +147,14 @@ export function ConversationItem(props: ConversationItemProps) {
   return (
     <button
       onClick={onClick}
+      title={isDisabled ? (disabledReason || 'Group disabled. Ask to be re-added.') : undefined}
       className={`
         w-full flex items-center gap-3 px-4 py-3 rounded-xl text-left
         ${isSelected
           ? 'bg-[var(--bg-selected)]'
-          : 'hover:bg-[var(--bg-hover)] active:bg-[var(--bg-active)]'
+          : isDisabled
+            ? 'bg-[var(--bg-secondary)] hover:bg-[var(--bg-hover)] active:bg-[var(--bg-active)]'
+            : 'hover:bg-[var(--bg-hover)] active:bg-[var(--bg-active)]'
         }
       `}
     >
@@ -166,6 +182,8 @@ export function ConversationItem(props: ConversationItemProps) {
             <span className={`text-[15px] truncate max-w-[160px] ${
               isSelected
                 ? 'text-[var(--text-selected)] font-semibold'
+                : isDisabled
+                  ? 'text-[var(--text-secondary)] font-semibold'
                 : unreadCount > 0
                   ? 'text-[var(--text-primary)] font-bold'
                   : 'text-[var(--text-primary)] font-semibold'
@@ -180,6 +198,8 @@ export function ConversationItem(props: ConversationItemProps) {
           <div className={`text-[14px] leading-[1.3] truncate ${
             isSelected
               ? 'text-[var(--text-selected-secondary)]'
+              : isDisabled
+                ? 'text-[var(--text-tertiary)]'
               : unreadCount > 0
                 ? 'text-[var(--text-primary)] font-semibold'
                 : 'text-[var(--text-secondary)]'
@@ -204,6 +224,9 @@ export function ConversationItem(props: ConversationItemProps) {
             )}
             {isPinned && (
               <Pin className={`w-4 h-4 ${isSelected ? 'text-[var(--text-selected-secondary)]' : 'text-[var(--text-tertiary)]'}`} />
+            )}
+            {isDisabled && (
+              <AlertTriangle className={`w-4 h-4 ${isSelected ? 'text-[var(--text-selected-secondary)]' : 'text-[var(--text-tertiary)]'}`} />
             )}
             {isNewRequest && (
               <span className={`w-2.5 h-2.5 rounded-full ${

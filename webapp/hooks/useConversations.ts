@@ -45,6 +45,9 @@ export interface ConversationMetadata {
   disappearingMessagesDurationNs?: bigint;
   // Mention tracking - true if user was @mentioned in unread messages
   hasMention?: boolean;
+  // Disabled conversations can be viewed but not sent to (requires re-add/recreate)
+  isDisabled?: boolean;
+  disabledReason?: string;
 }
 
 /**
