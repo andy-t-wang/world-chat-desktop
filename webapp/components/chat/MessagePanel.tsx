@@ -1965,18 +1965,28 @@ export function MessagePanel({
     if (disabledMessage) return;
     if (!message.trim() || isSending) return;
     const content = message.trim();
-    const replyToId = replyingTo?.messageId;
+    const replyContext = replyingTo;
+    const replyToId = replyContext?.messageId;
+    const restoreComposer = () => {
+      setMessage((current) => (current.trim() ? current : content));
+      if (replyContext) {
+        setReplyingTo((current) => current ?? replyContext);
+      }
+    };
+
+    setMessage("");
+    setReplyingTo(null); // Clear reply state immediately while send is pending
     setIsSending(true);
     // Always scroll to bottom when sending your own message
     isNearBottomRef.current = true;
     try {
       const success = await sendMessage(content, replyToId);
-      if (success) {
-        setMessage("");
-        setReplyingTo(null); // Clear reply state
+      if (!success) {
+        restoreComposer();
       }
     } catch (error) {
       console.error("Failed to send message:", error);
+      restoreComposer();
     } finally {
       setIsSending(false);
     }
@@ -2014,9 +2024,22 @@ export function MessagePanel({
     if (disabledMessage) return;
     if (!translationPreview || isSending) return;
 
-    const content = translationPreview.translated;
-    const originalText = translationPreview.original;
-    const replyToId = replyingTo?.messageId;
+    const preview = translationPreview;
+    const content = preview.translated;
+    const originalText = preview.original;
+    const replyContext = replyingTo;
+    const replyToId = replyContext?.messageId;
+    const restoreComposer = () => {
+      setMessage((current) => (current.trim() ? current : originalText));
+      setTranslationPreview((current) => current ?? preview);
+      if (replyContext) {
+        setReplyingTo((current) => current ?? replyContext);
+      }
+    };
+
+    setMessage("");
+    setTranslationPreview(null);
+    setReplyingTo(null);
     setIsSending(true);
     // Always scroll to bottom when sending your own message
     isNearBottomRef.current = true;
@@ -2024,12 +2047,9 @@ export function MessagePanel({
     try {
       const success = await sendMessage(content, replyToId);
       if (!success) {
+        restoreComposer();
         return;
       }
-
-      setMessage("");
-      setTranslationPreview(null);
-      setReplyingTo(null);
       // Cache the original text so we can display it alongside the translation
       // Skip caching for disappearing message conversations
       cacheOriginal(conversationId, content, originalText, hasDisappearingMessages);
@@ -2045,6 +2065,7 @@ export function MessagePanel({
       }
     } catch (error) {
       console.error("Failed to send message:", error);
+      restoreComposer();
     } finally {
       setIsSending(false);
     }
