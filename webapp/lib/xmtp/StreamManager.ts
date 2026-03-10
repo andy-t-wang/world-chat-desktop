@@ -600,6 +600,10 @@ class XMTPStreamManager {
   // Track when user last read each conversation (for unread counts)
   private lastReadTimestamps = new Map<string, bigint>();
 
+  // Track the lastActivityNs at which we last sent a read receipt per conversation
+  // Used to avoid sending duplicate read receipts when no new messages arrived
+  private lastSentReadReceiptActivity = new Map<string, bigint>();
+
   // Track messages received while tab is hidden (for tab title)
   private hiddenTabMessageCount = 0;
 
@@ -3358,6 +3362,14 @@ class XMTPStreamManager {
     const conv = this.conversations.get(conversationId);
     if (!conv) return;
 
+    // Skip if no new activity since we last sent a read receipt for this conversation
+    const metadata = this.conversationMetadata.get(conversationId);
+    const currentActivity = metadata?.lastActivityNs ?? 0n;
+    const lastSentActivity = this.lastSentReadReceiptActivity.get(conversationId);
+    if (lastSentActivity !== undefined && currentActivity <= lastSentActivity) {
+      return;
+    }
+
     try {
       // For groups, skip if more than 5 members to reduce noise
       if (!isDm(conv)) {
@@ -3369,6 +3381,7 @@ class XMTPStreamManager {
 
       // Use new v6 sendReadReceipt API
       await conv.sendReadReceipt();
+      this.lastSentReadReceiptActivity.set(conversationId, currentActivity);
     } catch {
       // Read receipt failures are non-critical
     }
