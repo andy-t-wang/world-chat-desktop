@@ -220,8 +220,8 @@ export function TickerChartModal({ symbol, data, onClose, onRetry, isLoading }: 
                     fontSize: 12,
                   }}
                   labelStyle={{ color: 'var(--text-secondary)' }}
-                  formatter={(value: number | undefined) => {
-                    if (value === undefined) return ['', 'Price'];
+                  formatter={(value) => {
+                    if (typeof value !== 'number') return ['', 'Price'];
                     return [
                       new Intl.NumberFormat('en-US', {
                         style: 'currency',
