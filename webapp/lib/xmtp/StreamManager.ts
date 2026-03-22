@@ -258,10 +258,11 @@ async function tryDecodeRawRemoteAttachment(msg: {
 }
 
 // Message loading limits
-const BATCH_SIZE = 50;             // Messages to fetch per batch
+const INITIAL_BATCH_SIZE = 100;    // First load: fetch more to avoid multiple round-trips
+const BATCH_SIZE = 50;             // Subsequent batches (load more)
 const MIN_DISPLAYABLE_MESSAGES = 30; // Minimum displayable messages we want initially
 const MIN_LOADMORE_MESSAGES = 20;   // Minimum displayable messages per "load more"
-const MAX_FETCH_ITERATIONS = 5;     // Max iterations to prevent infinite loops
+const MAX_FETCH_ITERATIONS = 3;     // Max iterations (reduced — larger initial batch means fewer needed)
 const BACKGROUND_REFRESH_LIMIT = 100; // Limit for background sync refreshes
 
 // Stream restart configuration
@@ -819,13 +820,8 @@ class XMTPStreamManager {
     // Fetch current user's username for @mention detection (async, non-blocking)
     this.fetchCurrentUserUsername();
 
-    // Phase 1: Load from local cache (instant)
-    console.log('[StreamManager] Phase 1: Loading conversations from cache...');
-    const hasCachedConversations = await this.loadConversationsFromCache();
-    console.log('[StreamManager] Phase 1 complete, hasCachedConversations:', hasCachedConversations);
-
-    // Phase 2: Start streams for real-time updates
-    // Reset health state before starting streams
+    // Start streams IMMEDIATELY — don't wait for cache load.
+    // Streams deliver catch-up messages, so the sooner they start, the faster we're live.
     this.updateStreamHealth('healthy');
     this.updateStreamStatus({
       conversationStream: 'stopped',
@@ -840,21 +836,21 @@ class XMTPStreamManager {
 
     this.startConversationStream();
     this.startAllMessagesStream();
-
-    // Phase 2.5: Start health monitoring
     this.startHealthMonitoring();
 
-    // Phase 3: One-time initial sync to catch up
-    // For fresh installs (no cached conversations), await the sync so user sees their chats
-    // For returning users, run in background to not block UI
-    if (hasCachedConversations) {
-      this.performInitialSync();
-    } else {
+    // Load conversations from cache (Phase 0 is instant from localStorage,
+    // Phase 1 lists from SDK local DB, Phase 2 builds metadata for uncached)
+    console.log('[StreamManager] Loading conversations from cache...');
+    const hasCachedConversations = await this.loadConversationsFromCache();
+
+    // For fresh installs (no cache), do initial sync so user sees their chats
+    if (!hasCachedConversations) {
       await this.performInitialSync();
+    } else {
+      this.initialSyncDone = true;
     }
 
-    // Phase 4: Periodic sync to upload history for other devices
-    // This ensures we respond to history sync requests from new installations
+    // Start periodic sync for history requests from other devices
     this.startPeriodicHistorySync();
   }
 
@@ -956,6 +952,7 @@ class XMTPStreamManager {
         gn?: string; // groupName
         gi?: string; // groupImageUrl
         mc?: number; // memberCount
+        mp?: { i: string; a: string }[]; // memberPreviews (inboxId, address)
         p: string; // lastMessagePreview
         a: string; // lastActivityNs (as string for bigint)
         u: number; // unreadCount
@@ -970,6 +967,7 @@ class XMTPStreamManager {
           gn: meta.groupName,
           gi: meta.groupImageUrl,
           mc: meta.memberCount,
+          mp: meta.memberPreviews?.map(m => ({ i: m.inboxId, a: m.address })),
           p: meta.lastMessagePreview,
           a: meta.lastActivityNs.toString(),
           u: meta.unreadCount,
@@ -992,10 +990,18 @@ class XMTPStreamManager {
       if (!stored) return null;
       const entries = JSON.parse(stored) as Record<string, {
         t: string; pa: string; pi: string; gn?: string; gi?: string;
-        mc?: number; p: string; a: string; u: number; c: string;
+        mc?: number; mp?: { i: string; a: string }[];
+        p: string; a: string; u: number; c: string;
       }>;
       const map = new Map<string, ConversationMetadata>();
       for (const [id, e] of Object.entries(entries)) {
+        const memberPreviews = e.mp?.map(m => ({ inboxId: m.i, address: m.a }));
+        // Also populate memberAddressCache from cached member previews
+        if (memberPreviews) {
+          for (const m of memberPreviews) {
+            if (m.address) this.memberAddressCache.set(m.inboxId, m.address);
+          }
+        }
         map.set(id, {
           id,
           conversationType: e.t as 'dm' | 'group',
@@ -1004,7 +1010,7 @@ class XMTPStreamManager {
           groupName: e.gn,
           groupImageUrl: e.gi,
           memberCount: e.mc,
-          memberPreviews: undefined, // rebuilt in Phase 2
+          memberPreviews,
           lastMessagePreview: e.p,
           lastActivityNs: BigInt(e.a),
           unreadCount: e.u,
@@ -1246,21 +1252,19 @@ class XMTPStreamManager {
       );
       console.log('[StreamManager] conversations.list() returned', localConversations.length, 'conversations');
 
-      const ids: string[] = [];
       const cacheLoadConversations: Conversation[] = [];
+      const hasCachedMetadata = cachedMetadata && cachedMetadata.size > 0;
 
-      // PHASE 1: Store conversations immediately with placeholder metadata
-      // This MUST be synchronous-only (no await) to render the list instantly
+      // PHASE 1: Store conversation objects and set placeholder metadata
+      // ONLY for conversations that don't already have cached metadata.
+      // This preserves the instant Phase 0 display.
       for (const conv of localConversations) {
         const isConvDm = isDm(conv);
-        let groupName: string | undefined;
-        let groupImageUrl: string | undefined;
 
         if (!isConvDm) {
           try {
             const groupConv = conv as Group;
-            groupName = groupConv.name;
-            groupImageUrl = groupConv.imageUrl;
+            void groupConv.name; // Test if MLS group is accessible
           } catch (error) {
             if (isMlsGroupNotFoundError(error)) {
               continue;
@@ -1268,133 +1272,104 @@ class XMTPStreamManager {
           }
         }
 
+        // Always store the conversation object (needed for SDK calls later)
         this.conversations.set(conv.id, conv);
 
-        // No async calls here — consent state will be resolved in Phase 2
-        const placeholderMetadata: ConversationMetadata = {
-          id: conv.id,
-          conversationType: isConvDm ? 'dm' : 'group',
-          peerAddress: '',
-          peerInboxId: '',
-          groupName: isConvDm ? undefined : groupName,
-          groupImageUrl: isConvDm ? undefined : groupImageUrl,
-          memberCount: undefined,
-          memberPreviews: undefined,
-          lastMessagePreview: '',
-          lastActivityNs: BigInt(0),
-          unreadCount: 0,
-          consentState: 'unknown',
-          disappearingMessagesEnabled: false,
-        };
-        this.conversationMetadata.set(conv.id, placeholderMetadata);
-        ids.push(conv.id);
+        // Only create placeholder metadata if we don't already have cached metadata
+        if (!this.conversationMetadata.has(conv.id)) {
+          let groupName: string | undefined;
+          let groupImageUrl: string | undefined;
+          if (!isConvDm) {
+            try {
+              const groupConv = conv as Group;
+              groupName = groupConv.name;
+              groupImageUrl = groupConv.imageUrl;
+            } catch {
+              // ignore
+            }
+          }
+          this.conversationMetadata.set(conv.id, {
+            id: conv.id,
+            conversationType: isConvDm ? 'dm' : 'group',
+            peerAddress: '',
+            peerInboxId: '',
+            groupName: isConvDm ? undefined : groupName,
+            groupImageUrl: isConvDm ? undefined : groupImageUrl,
+            memberCount: undefined,
+            memberPreviews: undefined,
+            lastMessagePreview: '',
+            lastActivityNs: BigInt(0),
+            unreadCount: 0,
+            consentState: 'unknown',
+            disappearingMessagesEnabled: false,
+          });
+        }
+
         cacheLoadConversations.push(conv);
       }
 
-      // If no conversations found locally (fresh install), keep loading state
-      // and let performInitialSync handle it
-      const hasCachedConversations = ids.length > 0;
+      const hasCachedConversations = cacheLoadConversations.length > 0;
 
-      // Show list immediately (fast first render)
-      store.set(conversationIdsAtom, ids);
-      if (hasCachedConversations) {
+      // Only update the conversation list if we didn't already show cached ones
+      // (or if there are new conversations not in the cache)
+      if (!hasCachedMetadata) {
+        const ids = cacheLoadConversations.map(c => c.id);
+        store.set(conversationIdsAtom, ids);
+        if (hasCachedConversations) {
+          store.set(isLoadingConversationsAtom, false);
+        }
+        this.incrementMetadataVersion();
+      } else {
         store.set(isLoadingConversationsAtom, false);
       }
-      this.incrementMetadataVersion();
 
-      // PHASE 2: Build metadata for visible conversations first (top 30),
-      // then lazily load the rest. With 478 conversations, building metadata
-      // for all of them takes too long. list() returns sorted by lastMessage desc,
-      // so the first ones are the most recent and most important.
-      const VISIBLE_COUNT = 30;
-      const METADATA_BATCH_SIZE = 10;
-      const visibleConvos = cacheLoadConversations.slice(0, VISIBLE_COUNT);
-      const remainingConvos = cacheLoadConversations.slice(VISIBLE_COUNT);
+      // PHASE 2: Skip bulk metadata building entirely when we have a warm cache.
+      // The 228+ conversations without previews are likely empty — no point building
+      // metadata for them. If a message arrives for one, the stream handles it on-demand.
+      // Only build metadata when there's NO cache at all (first load).
+      if (!hasCachedMetadata) {
+        // First load — no cache. Build metadata for top conversations only.
+        const FIRST_LOAD_COUNT = 30;
+        const METADATA_BATCH_SIZE = 10;
+        const toLoad = cacheLoadConversations.slice(0, FIRST_LOAD_COUNT);
 
-      console.log(`[StreamManager] Phase 2: Building metadata for ${visibleConvos.length} visible, ${remainingConvos.length} deferred`);
+        console.log(`[StreamManager] Phase 2 (first load): Building metadata for top ${toLoad.length} conversations`);
 
-      // Build metadata for visible conversations in parallel (small set, fast)
-      const visibleResults = await Promise.all(
-        visibleConvos.map(async (conv) => {
-          try {
-            const metadata = await this.buildConversationMetadata(conv, false);
-            this.conversationMetadata.set(conv.id, metadata);
-            return { convId: conv.id, metadata };
-          } catch (err) {
-            console.error('[StreamManager] Failed to build metadata for', conv.id, err);
-            return null;
-          }
-        })
-      );
-
-      // Filter, sort, and show visible conversations immediately
-      const selectedId = store.get(selectedConversationIdAtom);
-      const filteredIds: string[] = [];
-
-      for (const result of visibleResults) {
-        if (!result) continue;
-        if (result.metadata.lastMessagePreview || result.convId === selectedId) {
-          filteredIds.push(result.convId);
-        }
-      }
-
-      filteredIds.sort((a, b) => {
-        const metaA = this.conversationMetadata.get(a);
-        const metaB = this.conversationMetadata.get(b);
-        if (!metaA || !metaB) return 0;
-        if (a === selectedId && !metaA.lastMessagePreview) return -1;
-        if (b === selectedId && !metaB.lastMessagePreview) return 1;
-        return Number(metaB.lastActivityNs - metaA.lastActivityNs);
-      });
-
-      // Show visible conversations now — user sees their recent chats immediately
-      store.set(conversationIdsAtom, filteredIds);
-      this.incrementMetadataVersion();
-      this.saveLastReadTimestamps();
-      this.updateTabTitle();
-
-      // Save metadata cache so next reload is instant
-      this.saveMetadataCache();
-
-      console.log(`[StreamManager] Phase 2 visible complete: ${filteredIds.length} conversations shown`);
-
-      // PHASE 3: Build remaining metadata in background batches (non-blocking)
-      // These are older conversations the user scrolls to see
-      for (let i = 0; i < remainingConvos.length; i += METADATA_BATCH_SIZE) {
-        const batch = remainingConvos.slice(i, i + METADATA_BATCH_SIZE);
-        const batchResults = await Promise.all(
-          batch.map(async (conv) => {
-            try {
-              const metadata = await this.buildConversationMetadata(conv, false);
-              this.conversationMetadata.set(conv.id, metadata);
-              return { convId: conv.id, metadata };
-            } catch {
-              return null;
-            }
-          })
-        );
-
-        // Add any with messages to the visible list
-        const currentIds = store.get(conversationIdsAtom);
-        const currentIdSet = new Set(currentIds);
-        let hasNew = false;
-        for (const result of batchResults) {
-          if (!result) continue;
-          if ((result.metadata.lastMessagePreview || result.convId === selectedId) && !currentIdSet.has(result.convId)) {
-            filteredIds.push(result.convId);
-            hasNew = true;
-          }
-        }
-        if (hasNew) {
-          filteredIds.sort((a, b) => {
-            const metaA = this.conversationMetadata.get(a);
-            const metaB = this.conversationMetadata.get(b);
-            if (!metaA || !metaB) return 0;
-            return Number(metaB.lastActivityNs - metaA.lastActivityNs);
-          });
-          store.set(conversationIdsAtom, [...filteredIds]);
+        for (let i = 0; i < toLoad.length; i += METADATA_BATCH_SIZE) {
+          const batch = toLoad.slice(i, i + METADATA_BATCH_SIZE);
+          await Promise.all(
+            batch.map(async (conv) => {
+              try {
+                const metadata = await this.buildConversationMetadata(conv, false);
+                this.conversationMetadata.set(conv.id, metadata);
+              } catch (err) {
+                console.error('[StreamManager] Failed to build metadata for', conv.id, err);
+              }
+            })
+          );
           this.incrementMetadataVersion();
         }
+
+        // Build the conversation list from what we have
+        const selectedId = store.get(selectedConversationIdAtom);
+        const allIds: string[] = [];
+        for (const conv of cacheLoadConversations) {
+          const meta = this.conversationMetadata.get(conv.id);
+          if (meta && (meta.lastMessagePreview || conv.id === selectedId)) {
+            allIds.push(conv.id);
+          }
+        }
+        allIds.sort((a, b) => {
+          const metaA = this.conversationMetadata.get(a);
+          const metaB = this.conversationMetadata.get(b);
+          if (!metaA || !metaB) return 0;
+          return Number(metaB.lastActivityNs - metaA.lastActivityNs);
+        });
+        store.set(conversationIdsAtom, allIds);
+        this.incrementMetadataVersion();
+        console.log(`[StreamManager] Phase 2 complete: ${allIds.length} conversations shown`);
+      } else {
+        console.log(`[StreamManager] Phase 2 skipped — warm cache with ${cachedMetadata!.size} conversations`);
       }
 
       this.saveLastReadTimestamps();
@@ -1711,6 +1686,9 @@ class XMTPStreamManager {
 
     this.incrementMetadataVersion();
 
+    // Also refresh full metadata for this conversation
+    this.refreshFullMetadata(conversation.id);
+
     // If already loaded, streams will handle any new messages
   }
 
@@ -1800,6 +1778,83 @@ class XMTPStreamManager {
    * @param conv - The conversation
    * @param shouldSync - Whether to sync before fetching messages (false for fast local load)
    */
+  /**
+   * Refresh full metadata for a conversation when it's opened.
+   * Fetches deferred fields: members, disappearing messages, lastReadTimes.
+   * Runs in background — does not block message loading.
+   */
+  private async refreshFullMetadata(conversationId: string): Promise<void> {
+    const conv = this.conversations.get(conversationId);
+    const meta = this.conversationMetadata.get(conversationId);
+    if (!conv || !meta) return;
+
+    try {
+      const isConvDm = isDm(conv);
+
+      // Fetch deferred data in parallel
+      const [members, disappearingEnabled, disappearingSettings, lastReadTimes] = await Promise.all([
+        conv.members(),
+        conv.isMessageDisappearingEnabled(),
+        conv.messageDisappearingSettings(),
+        conv.lastReadTimes(),
+      ]);
+
+      // Update members
+      if (isConvDm) {
+        const peerInboxId = meta.peerInboxId || await conv.peerInboxId();
+        for (const member of members) {
+          if (member.inboxId === peerInboxId && member.accountIdentifiers?.length) {
+            meta.peerAddress = member.accountIdentifiers[0].identifier;
+            this.memberAddressCache.set(peerInboxId, meta.peerAddress);
+            break;
+          }
+        }
+        meta.peerInboxId = peerInboxId;
+      } else {
+        meta.memberCount = members.length;
+        meta.memberPreviews = members.map((m) => ({
+          inboxId: m.inboxId,
+          address: m.accountIdentifiers?.[0]?.identifier ?? '',
+        }));
+        for (const member of meta.memberPreviews) {
+          if (member.address) {
+            this.memberAddressCache.set(member.inboxId, member.address);
+          }
+        }
+      }
+
+      // Update disappearing messages
+      meta.disappearingMessagesEnabled = disappearingEnabled;
+      if (disappearingSettings && 'inNs' in disappearingSettings) {
+        meta.disappearingMessagesDurationNs = BigInt((disappearingSettings as { inNs: bigint }).inNs);
+      }
+
+      // Update read state from SDK (synced across devices)
+      const ownInboxId = this.client?.inboxId;
+      if (ownInboxId) {
+        const sdkLastRead = lastReadTimes.get(ownInboxId);
+        if (sdkLastRead && sdkLastRead > BigInt(0)) {
+          const localTs = this.lastReadTimestamps.get(conversationId) ?? BigInt(0);
+          if (sdkLastRead > localTs) {
+            this.lastReadTimestamps.set(conversationId, sdkLastRead);
+          }
+        }
+        // Update peer read receipt
+        for (const [inboxId, timestamp] of lastReadTimes) {
+          if (inboxId !== ownInboxId && timestamp > BigInt(0)) {
+            this.updateReadReceipt(conversationId, timestamp);
+            break;
+          }
+        }
+      }
+
+      this.incrementMetadataVersion();
+      this.saveMetadataCache();
+    } catch (error) {
+      console.error('[StreamManager] Failed to refresh full metadata for', conversationId, error);
+    }
+  }
+
   private async buildConversationMetadata(conv: Conversation, shouldSync: boolean = true): Promise<ConversationMetadata> {
     let conversationType: 'dm' | 'group' = 'dm';
     let peerAddress = '';
@@ -1825,29 +1880,20 @@ class XMTPStreamManager {
         await withTimeout(conv.sync(), XMTP_OPERATION_TIMEOUT_MS, 'buildMetadata.sync');
       }
 
-      // Parallelize all async calls for much faster metadata building
-      // Only load 1 message for preview (not 50) — use countMessages for unread count
-      const [rawConsentState, members, messages, dmPeerInboxId, disappearingEnabled, disappearingSettings] = await withTimeout(
+      // Minimal async calls for sidebar display — only what's needed
+      // Skip members() and disappearing messages on initial load (defer to when conversation is opened)
+      const [rawConsentState, messages, dmPeerInboxId] = await withTimeout(
         Promise.all([
           conv.consentState(),
-          conv.members(),
           conv.messages({
             limit: BigInt(1),
             direction: SortDirection.Descending,
           }),
           isConvDm ? conv.peerInboxId() : Promise.resolve(''),
-          conv.isMessageDisappearingEnabled(),
-          conv.messageDisappearingSettings(),
         ]),
         XMTP_OPERATION_TIMEOUT_MS,
         'buildMetadata.fetch'
       );
-
-      // Process disappearing messages settings
-      disappearingMessagesEnabled = disappearingEnabled;
-      if (disappearingSettings && 'inNs' in disappearingSettings) {
-        disappearingMessagesDurationNs = BigInt((disappearingSettings as { inNs: bigint }).inNs);
-      }
 
       // Process consent state
       if (rawConsentState === ConsentState.Allowed) {
@@ -1859,80 +1905,75 @@ class XMTPStreamManager {
       }
 
       if (isConvDm) {
-        // DM: Get peer info from parallel results
+        // DM: Get peer info — try member address cache first, only call members() if needed
         peerInboxId = dmPeerInboxId;
-        for (const member of members) {
-          if (member.inboxId === peerInboxId && member.accountIdentifiers?.length) {
-            peerAddress = member.accountIdentifiers[0].identifier;
-            break;
+        const cachedAddress = this.memberAddressCache.get(peerInboxId);
+        if (cachedAddress) {
+          peerAddress = cachedAddress;
+        } else {
+          // Need to resolve peer address from members (only for DMs without cached address)
+          try {
+            const members = await withTimeout(conv.members(), XMTP_OPERATION_TIMEOUT_MS, 'buildMetadata.members');
+            for (const member of members) {
+              if (member.inboxId === peerInboxId && member.accountIdentifiers?.length) {
+                peerAddress = member.accountIdentifiers[0].identifier;
+                this.memberAddressCache.set(peerInboxId, peerAddress);
+                break;
+              }
+            }
+          } catch {
+            // Skip — address will resolve later
           }
         }
       } else {
-        // Group: Get group info
+        // Group: Read sync properties
         const group = conv as Group;
         groupName = group.name;
         groupImageUrl = group.imageUrl;
-        memberCount = members.length;
-        // Include ALL members so we can look up sender addresses for messages
-        // Avatar component will only use first 2 for the preview display
-        memberPreviews = members.map((m) => ({
-          inboxId: m.inboxId,
-          address: m.accountIdentifiers?.[0]?.identifier ?? '',
-        }));
-        // Cache all member addresses for future lookups (even after removal)
-        for (const member of memberPreviews) {
-          if (member.address) {
-            this.memberAddressCache.set(member.inboxId, member.address);
+        // Use cached member previews if available, otherwise fetch members
+        const existingMeta = this.conversationMetadata.get(conv.id);
+        if (existingMeta?.memberPreviews && existingMeta.memberPreviews.length > 0) {
+          memberPreviews = existingMeta.memberPreviews;
+          memberCount = existingMeta.memberCount;
+        } else {
+          // No cached members — need to fetch for group avatar, member count, and sender names
+          try {
+            const members = await withTimeout(conv.members(), XMTP_OPERATION_TIMEOUT_MS, 'buildMetadata.members');
+            memberCount = members.length;
+            memberPreviews = members.map((m) => ({
+              inboxId: m.inboxId,
+              address: m.accountIdentifiers?.[0]?.identifier ?? '',
+            }));
+            for (const member of memberPreviews) {
+              if (member.address) {
+                this.memberAddressCache.set(member.inboxId, member.address);
+              }
+            }
+          } catch {
+            // Skip — will resolve when conversation is opened
           }
         }
       }
 
-      // Get last read timestamp for unread counting
+      // Use locally cached lastReadTimestamp for unread counting (no async call)
+      // lastReadTimes() is expensive through the worker — use our localStorage cache instead
+      // The stream will update unreads in real-time, and full lastReadTimes() syncs on conversation open
       const nowNs = BigInt(Date.now()) * 1_000_000n;
       const ownInboxId = this.client?.inboxId;
-      let lastReadTs: bigint;
-
-      try {
-        const lastReadTimes = await conv.lastReadTimes();
-        const sdkLastRead = ownInboxId ? lastReadTimes.get(ownInboxId) : undefined;
-
-        // Use the most recent of: SDK read time, local cache
-        const localTs = this.lastReadTimestamps.get(conv.id);
-        const candidates = [
-          sdkLastRead ?? BigInt(0),
-          localTs ?? BigInt(0),
-        ];
-        const maxTs = candidates.reduce((a, b) => a > b ? a : b, BigInt(0));
-
-        if (maxTs > BigInt(0)) {
-          lastReadTs = maxTs;
-          this.lastReadTimestamps.set(conv.id, maxTs);
-        } else {
-          lastReadTs = nowNs;
-          this.lastReadTimestamps.set(conv.id, nowNs);
-        }
-
-        // Update peer read receipt while we have the data
-        for (const [inboxId, timestamp] of lastReadTimes) {
-          if (inboxId !== ownInboxId && timestamp > BigInt(0)) {
-            this.updateReadReceipt(conv.id, timestamp);
-            break;
-          }
-        }
-      } catch {
-        const localTs = this.lastReadTimestamps.get(conv.id);
-        lastReadTs = localTs ?? nowNs;
-        if (!localTs) {
-          this.lastReadTimestamps.set(conv.id, nowNs);
-        }
+      const localTs = this.lastReadTimestamps.get(conv.id);
+      const lastReadTs = localTs ?? nowNs;
+      if (!localTs) {
+        this.lastReadTimestamps.set(conv.id, nowNs);
       }
 
-      // Use countMessages for efficient unread count (no message deserialization)
+      // Use countMessages for efficient unread count (single lightweight DB query)
       try {
         const countResult = await conv.countMessages({ sentAfterNs: lastReadTs });
         unreadCount = Number(countResult);
       } catch {
-        // Fallback: no unread count available
+        // Fallback: use cached unread count if available
+        const existingMeta = this.conversationMetadata.get(conv.id);
+        if (existingMeta) unreadCount = existingMeta.unreadCount;
       }
 
       // Build preview from the single loaded message
@@ -2274,7 +2315,6 @@ class XMTPStreamManager {
     const existingSync = this.syncingConversations.get(conversationId);
     if (existingSync) {
       console.log(`[StreamManager] Conversation ${conversationId} is already syncing, waiting...`);
-      // Show syncing state
       this.setPagination(conversationId, {
         hasMore: true,
         oldestMessageNs: null,
@@ -2314,6 +2354,10 @@ class XMTPStreamManager {
         console.log(`[StreamManager] Starting background sync for ${conversationId}`);
         this.startBackgroundSync(conversationId, conv);
       }
+
+      // Refresh full metadata AFTER messages are loaded (members, disappearing settings, etc.)
+      // Don't compete with message loading for the worker thread
+      this.refreshFullMetadata(conversationId);
     } catch (error) {
       if (isMlsGroupNotFoundError(error)) {
         console.warn('[StreamManager] Conversation unavailable while loading messages:', conversationId);
@@ -2353,9 +2397,11 @@ class XMTPStreamManager {
       while (displayableIds.length < MIN_DISPLAYABLE_MESSAGES && hasMore && iterations < MAX_FETCH_ITERATIONS) {
         iterations++;
 
-        // Quick timeout - if messages don't load fast, we need to sync
+        // First iteration: fetch larger batch to minimize worker round-trips
+        // Most conversations will get enough displayable messages in one call
+        const batchSize = iterations === 1 ? INITIAL_BATCH_SIZE : BATCH_SIZE;
         const messagesPromise = conv.messages({
-          limit: BigInt(BATCH_SIZE),
+          limit: BigInt(batchSize),
           sentBeforeNs: oldestMessageNs ?? undefined,
           direction: SortDirection.Descending,
         });
@@ -2401,7 +2447,7 @@ class XMTPStreamManager {
         }
 
         oldestMessageNs = messages[messages.length - 1].sentAtNs;
-        hasMore = messages.length === BATCH_SIZE;
+        hasMore = messages.length === batchSize;
       }
 
       const version = store.get(reactionsVersionAtom);

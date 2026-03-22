@@ -99,12 +99,9 @@ export function preloadXmtpModules() {
   });
 }
 
-// Auto-preload on module import (starts loading immediately when this file is imported)
+// Eagerly preload XMTP modules — don't wait for idle callback
 if (typeof window !== "undefined") {
-  // Use requestIdleCallback to load during idle time, fallback to setTimeout
-  const schedulePreload =
-    window.requestIdleCallback || ((cb: () => void) => setTimeout(cb, 1));
-  schedulePreload(() => preloadXmtpModules());
+  preloadXmtpModules();
 }
 
 interface UseQRXmtpClientResult {
@@ -192,7 +189,7 @@ export function useQRXmtpClient(): UseQRXmtpClientResult {
       // This skips signer initialization since the client is already registered
       const buildOptions = {
         env: "production" as const,
-        appVersion: "WorldChat/1.0.0",
+        appVersion: "world-chat-desktop",
         loggingLevel: LogLevel.Off,
         historySyncUrl: "https://message-history.production.ephemera.network",
         codecs: [
@@ -213,53 +210,29 @@ export function useQRXmtpClient(): UseQRXmtpClientResult {
         buildOptions as any,
       );
 
-      // Verify identity is registered before proceeding
-      try {
-        await xmtpClient.preferences.sync();
-      } catch (verifyError) {
+      // Verify identity — run in background, don't block initialization.
+      // syncAllDeviceSyncGroups() replaces deprecated preferences.sync().
+      // Critical errors (corruption, uninitialized) are handled asynchronously.
+      xmtpClient.syncAllDeviceSyncGroups().catch((verifyError: unknown) => {
         const verifyMsg =
           verifyError instanceof Error
             ? verifyError.message
             : String(verifyError);
-
-        // Check for database lock conflict
-        if (
-          verifyMsg.includes("Access Handle") ||
-          verifyMsg.includes("SyncAccessHandle") ||
-          verifyMsg.includes("createSyncAccessHandle")
-        ) {
-          releaseTabLock();
-          throw new Error("TAB_LOCKED");
-        }
+        console.warn("[useQRXmtpClient] Background preferences.sync failed:", verifyMsg);
 
         if (
           verifyMsg.includes("Uninitialized identity") ||
           verifyMsg.includes("register_identity")
         ) {
-          releaseTabLock();
-          if (cachedSession.inboxId) {
-            await deleteXmtpDatabase(cachedSession.inboxId);
-          }
+          // Identity lost — force re-login on next load
           clearSession();
-          dispatch({
-            type: "INIT_ERROR",
-            error: new Error(
-              "Identity registration incomplete. Please login again.",
-            ),
-          });
-          return false;
+          window.location.reload();
+        } else if (isDatabaseCorruptionError(verifyMsg)) {
+          localStorage.setItem(PENDING_DB_CLEAR_KEY, "true");
+          window.location.reload();
         }
-
-        if (isDatabaseCorruptionError(verifyMsg)) {
-          try {
-            localStorage.setItem(PENDING_DB_CLEAR_KEY, "true");
-          } catch {
-            // Ignore localStorage write errors
-          }
-          throw new Error("DATABASE_CORRUPTED");
-        }
-        // Other errors might be transient, continue
-      }
+        // Other errors are transient — ignore
+      });
 
       if (xmtpClient.inboxId) {
         setSessionCache(cachedSession.address, xmtpClient.inboxId);
@@ -378,7 +351,7 @@ export function useQRXmtpClient(): UseQRXmtpClientResult {
 
         const clientOptions = {
           env: "production" as const,
-          appVersion: "WorldChat/1.0.0",
+          appVersion: "world-chat-desktop",
           loggingLevel: LogLevel.Off,
           historySyncUrl: "https://message-history.production.ephemera.network",
           codecs: [
@@ -415,7 +388,7 @@ export function useQRXmtpClient(): UseQRXmtpClientResult {
 
         // Verify identity is registered before caching session
         try {
-          await xmtpClient.preferences.sync();
+          await xmtpClient.syncAllDeviceSyncGroups();
         } catch (verifyError) {
           const verifyMsg =
             verifyError instanceof Error
