@@ -3,7 +3,8 @@
 import { useCallback, useRef } from "react";
 import { useSetAtom, useAtom } from "jotai";
 import type { Client, Signer } from "@xmtp/browser-sdk";
-import { clientLifecycleAtom, clientStateAtom } from "@/stores/client";
+import { clientLifecycleAtom, clientStateAtom, isNewInstallationAtom } from "@/stores/client";
+import { store } from "@/stores";
 import { streamManager } from "@/lib/xmtp/StreamManager";
 import { clearSession } from "@/lib/auth/session";
 import {
@@ -189,25 +190,27 @@ export function useQRXmtpClient(): UseQRXmtpClientResult {
 
       // Use Client.build() for faster session restoration
       // This skips signer initialization since the client is already registered
+      const buildOptions = {
+        env: "production" as const,
+        appVersion: "WorldChat/1.0.0",
+        loggingLevel: LogLevel.Off,
+        historySyncUrl: "https://message-history.production.ephemera.network",
+        codecs: [
+          new AttachmentCodec(),
+          new RemoteAttachmentCodec(),
+          new TransactionReferenceCodec(),
+          new PaymentRequestCodec(),
+          new PaymentFulfillmentCodec(),
+          new RemoveMessageCodec(),
+        ],
+      };
       const xmtpClient = await Client.build(
         {
           identifier: cachedSession.address.toLowerCase(),
           identifierKind: IdentifierKind.Ethereum,
         },
-        {
-          env: "production",
-          appVersion: "WorldChat/1.0.0",
-          loggingLevel: LogLevel.Off,
-          historySyncUrl: "https://message-history.production.ephemera.network",
-          codecs: [
-            new AttachmentCodec(),
-            new RemoteAttachmentCodec(),
-            new TransactionReferenceCodec(),
-            new PaymentRequestCodec(),
-            new PaymentFulfillmentCodec(),
-            new RemoveMessageCodec(),
-          ],
-        },
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        buildOptions as any,
       );
 
       // Verify identity is registered before proceeding
@@ -406,6 +409,8 @@ export function useQRXmtpClient(): UseQRXmtpClientResult {
         } else {
           // Fresh login
           xmtpClient = await Client.create(signer, clientOptions);
+          // Mark as new installation so UI can prompt for history sync
+          store.set(isNewInstallationAtom, true);
         }
 
         // Verify identity is registered before caching session

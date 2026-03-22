@@ -41,6 +41,7 @@ import {
   chatBackgroundStyleAtom,
 } from "@/stores/settings";
 import { streamManager } from "@/lib/xmtp/StreamManager";
+import { HistorySyncFlow } from "@/components/chat/HistorySyncFlow";
 import { clearSession } from "@/lib/auth/session";
 import {
   clearSessionCache,
@@ -93,7 +94,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
   const [isElectronEnv, setIsElectronEnv] = useState(false);
   const [linkCopied, setLinkCopied] = useState(false);
   const [translationAvailable, setTranslationAvailable] = useState(false);
-  const [isSyncingHistory, setIsSyncingHistory] = useState(false);
+  const [showSyncFlow, setShowSyncFlow] = useState(false);
 
   // Update state management
   const [updateState, setUpdateState] = useState<'idle' | 'checking' | 'available' | 'downloading' | 'downloaded'>('idle');
@@ -289,17 +290,6 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
     }
   };
 
-  const handleHistorySync = async () => {
-    if (isSyncingHistory) return;
-    setIsSyncingHistory(true);
-    try {
-      await streamManager.requestHistorySync();
-    } catch (error) {
-      console.error("History sync failed:", error);
-    } finally {
-      setIsSyncingHistory(false);
-    }
-  };
 
   return (
     <div className="flex-1 min-h-0 flex flex-col bg-[var(--bg-sidebar)]">
@@ -576,25 +566,29 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
             Sync
           </h3>
 
-          <button
-            onClick={handleHistorySync}
-            disabled={isSyncingHistory}
-            className="w-full flex items-center gap-3 py-3 px-4 hover:bg-[var(--bg-hover)] transition-colors disabled:opacity-50"
-          >
-            {isSyncingHistory ? (
-              <Loader2 className="w-5 h-5 text-[var(--accent-blue)] animate-spin" />
-            ) : (
-              <History className="w-5 h-5 text-[var(--text-tertiary)]" />
-            )}
-            <div className="flex-1 text-left">
-              <p className="text-[14px] text-[var(--text-primary)]">
-                {isSyncingHistory ? "Syncing..." : "History Sync"}
-              </p>
-              <p className="text-[12px] text-[var(--text-secondary)]">
-                Pull message history from other devices
-              </p>
+          {showSyncFlow ? (
+            <div className="px-4 pb-2">
+              <HistorySyncFlow
+                onClose={() => setShowSyncFlow(false)}
+                onComplete={() => setShowSyncFlow(false)}
+              />
             </div>
-          </button>
+          ) : (
+            <button
+              onClick={() => setShowSyncFlow(true)}
+              className="w-full flex items-center gap-3 py-3 px-4 hover:bg-[var(--bg-hover)] transition-colors"
+            >
+              <History className="w-5 h-5 text-[var(--text-tertiary)]" />
+              <div className="flex-1 text-left">
+                <p className="text-[14px] text-[var(--text-primary)]">
+                  Sync messages from another device
+                </p>
+                <p className="text-[12px] text-[var(--text-secondary)]">
+                  Pull message history from other installations
+                </p>
+              </div>
+            </button>
+          )}
         </div>
 
         {/* Updates Section */}

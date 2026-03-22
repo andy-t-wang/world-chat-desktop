@@ -79,3 +79,6 @@ type ClientAction =
   | { type: 'INIT_SUCCESS'; client: AnyClient }
   | { type: 'INIT_ERROR'; error: Error }
   | { type: 'DISCONNECT' };
+
+/** Whether this session was a fresh install (ephemeral, not persisted) */
+export const isNewInstallationAtom = atom<boolean>(false);

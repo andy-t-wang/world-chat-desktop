@@ -332,14 +332,10 @@ function setupIpcHandlers() {
     app.removeAllListeners('window-all-closed');
     app.removeAllListeners('before-quit');
 
-    // Destroy the window explicitly (bypass the close handler)
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.destroy();
-      mainWindow = null;
-    }
-
-    // Now quit and install
-    autoUpdater.quitAndInstall(false, true);
+    // Call quitAndInstall BEFORE destroying the window.
+    // electron-updater needs the app process alive to schedule the relaunch.
+    // isSilent=true prevents installer UI, isForceRunAfter=true ensures relaunch.
+    autoUpdater.quitAndInstall(true, true);
   });
 
   // =========================================================================

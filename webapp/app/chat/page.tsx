@@ -5,8 +5,9 @@ import { useRouter } from "next/navigation";
 import { useAtomValue, useSetAtom } from "jotai";
 import { Sidebar, MessagePanel, EmptyState, GroupDetailsPanel, MemberProfilePanel, ResizableDivider } from "@/components/chat";
 import { NewConversationModal } from "@/components/chat/NewConversationModal";
+import { HistorySyncFlow } from "@/components/chat/HistorySyncFlow";
 import { selectedConversationIdAtom } from "@/stores/ui";
-import { clientStateAtom } from "@/stores/client";
+import { clientStateAtom, isNewInstallationAtom } from "@/stores/client";
 import { xmtpClientAtom } from "@/stores/client";
 import { useConversationMetadata, useIsMessageRequest } from "@/hooks/useConversations";
 import { useQRXmtpClient } from "@/hooks/useQRXmtpClient";
@@ -28,6 +29,8 @@ export default function ChatPage() {
   const { restoreSession } = useQRXmtpClient();
   const selectedId = useAtomValue(selectedConversationIdAtom);
   const setSelectedId = useSetAtom(selectedConversationIdAtom);
+  const isNewInstall = useAtomValue(isNewInstallationAtom);
+  const setIsNewInstall = useSetAtom(isNewInstallationAtom);
   const [isNewChatOpen, setIsNewChatOpen] = useState(false);
   const [isRestoring, setIsRestoring] = useState(false);
   const [restorationAttempted, setRestorationAttempted] = useState(false);
@@ -542,6 +545,19 @@ export default function ChatPage() {
         isOpen={isNewChatOpen}
         onClose={() => setIsNewChatOpen(false)}
       />
+
+      {/* History Sync Overlay - shown on first login */}
+      {isNewInstall && (
+        <div className="fixed inset-0 z-[60] bg-black/50 flex items-center justify-center">
+          <div className="bg-[var(--bg-primary)] rounded-2xl p-6 max-w-md w-full mx-4 shadow-xl">
+            <HistorySyncFlow
+              isModal
+              onClose={() => setIsNewInstall(false)}
+              onComplete={() => setIsNewInstall(false)}
+            />
+          </div>
+        </div>
+      )}
     </>
   );
 }

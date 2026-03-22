@@ -19,6 +19,7 @@ export {
   currentInboxIdAtom,
   currentAccountIdentifierAtom,
   clientLifecycleAtom,
+  isNewInstallationAtom,
 } from './client';
 
 // Message state
