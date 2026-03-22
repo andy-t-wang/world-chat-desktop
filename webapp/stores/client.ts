@@ -82,3 +82,6 @@ type ClientAction =
 
 /** Whether this session was a fresh install (ephemeral, not persisted) */
 export const isNewInstallationAtom = atom<boolean>(false);
+
+/** Sync progress from syncAll — shows numSynced/numEligible */
+export const syncProgressAtom = atom<{ numSynced: number; numEligible: number } | null>(null);

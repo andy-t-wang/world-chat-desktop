@@ -20,6 +20,7 @@ export {
   currentAccountIdentifierAtom,
   clientLifecycleAtom,
   isNewInstallationAtom,
+  syncProgressAtom,
 } from './client';
 
 // Message state

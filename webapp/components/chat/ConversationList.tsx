@@ -8,6 +8,7 @@ import { ChatRequestsBanner } from './ChatRequestsBanner';
 import { selectedConversationIdAtom } from '@/stores/ui';
 import { xmtpClientAtom } from '@/stores/client';
 import { isSyncingConversationsAtom } from '@/stores/conversations';
+import { syncProgressAtom } from '@/stores/client';
 import { hideEmptyConversationsAtom, pinnedConversationIdsAtom, mutedConversationIdsAtom } from '@/stores/settings';
 import { customNicknamesAtom } from '@/stores/nicknames';
 import { VIRTUALIZATION } from '@/config/constants';
@@ -40,6 +41,7 @@ export function ConversationList({
   const client = useAtomValue(xmtpClientAtom);
   const hideEmptyConversations = useAtomValue(hideEmptyConversationsAtom);
   const isSyncing = useAtomValue(isSyncingConversationsAtom);
+  const syncProgress = useAtomValue(syncProgressAtom);
   const customNicknames = useAtomValue(customNicknamesAtom);
   const [pinnedIds, setPinnedIds] = useAtom(pinnedConversationIdsAtom);
   const [mutedIds, setMutedIds] = useAtom(mutedConversationIdsAtom);
@@ -515,7 +517,11 @@ export function ConversationList({
         <div className="absolute top-2 left-1/2 -translate-x-1/2 z-10">
           <div className="flex items-center gap-1.5 px-3 py-1 bg-[var(--bg-primary)] border border-[var(--border-subtle)] rounded-full shadow-sm">
             <Loader2 className="w-3 h-3 text-[var(--text-secondary)] animate-spin" />
-            <span className="text-xs text-[var(--text-secondary)] font-medium">Syncing</span>
+            <span className="text-xs text-[var(--text-secondary)] font-medium">
+              {syncProgress
+                ? `Syncing ${syncProgress.numSynced}/${syncProgress.numEligible}`
+                : 'Syncing'}
+            </span>
           </div>
         </div>
       )}

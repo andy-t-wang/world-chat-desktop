@@ -30,6 +30,7 @@ import {
   reactionsVersionAtom,
   streamHealthAtom,
   streamStatusAtom,
+  syncProgressAtom,
 } from '@/stores';
 import type { StreamHealthStatus, StreamStatus } from '@/stores';
 import type { ReactionContent, StoredReaction } from '@/stores/messages';
@@ -1173,18 +1174,25 @@ class XMTPStreamManager {
    * syncAll can fail globally due to a single missing MLS group.
    * Treat that as non-fatal so healthy conversations can continue.
    */
-  private async syncAllWithMlsFallback(consentStates: ConsentState[], context: string): Promise<void> {
-    if (!this.client) return;
+  private async syncAllWithMlsFallback(consentStates: ConsentState[], context: string): Promise<{ numEligible: number; numSynced: number } | null> {
+    if (!this.client) return null;
 
     try {
-      await this.client.conversations.syncAll(consentStates);
+      // The Browser SDK types syncAll as void, but the underlying WorkerConversations
+      // returns GroupSyncSummary at runtime. Cast to access it safely.
+      const summary = await this.client.conversations.syncAll(consentStates) as unknown as { numSynced: number; numEligible: number } | undefined;
+      if (summary && typeof summary.numSynced === 'number') {
+        console.log(`[StreamManager] syncAll (${context}): ${summary.numSynced}/${summary.numEligible} conversations synced`);
+        store.set(syncProgressAtom, { numSynced: summary.numSynced, numEligible: summary.numEligible });
+      }
+      return summary ?? null;
     } catch (error) {
       if (isMlsGroupNotFoundError(error)) {
         console.warn(
           `[StreamManager] syncAll skipped (${context}) due to missing MLS group. Continuing.`,
           error
         );
-        return;
+        return null;
       }
       throw error;
     }
@@ -1421,11 +1429,11 @@ class XMTPStreamManager {
       // Phase A: Network sync — Allowed only (Unknown deferred to Requests tab)
       await this.client.conversations.sync();
       await this.syncAllWithMlsFallback([ConsentState.Allowed], 'initial-sync-allowed');
-      console.log('[StreamManager] Initial sync complete (Allowed conversations)');
 
       // Network sync done — clear the syncing indicator
       // The metadata rebuild below happens silently in background
       store.set(isSyncingConversationsAtom, false);
+      store.set(syncProgressAtom, null);
 
       this.incrementMetadataVersion();
 
@@ -1507,6 +1515,7 @@ class XMTPStreamManager {
       console.error('[StreamManager] Initial sync error:', error);
       store.set(isLoadingConversationsAtom, false);
       store.set(isSyncingConversationsAtom, false);
+      store.set(syncProgressAtom, null);
       this.checkForDatabaseCorruption(error);
     }
   }
@@ -4404,7 +4413,7 @@ class XMTPStreamManager {
       await this.client.conversations.sync();
 
       // Sync allowed conversations only (per XMTP docs recommendation)
-      await this.client.conversations.syncAll([ConsentState.Allowed]);
+      await this.syncAllWithMlsFallback([ConsentState.Allowed], 'fallback-sync');
 
       // Sync messages for the selected conversation if any
       const selectedId = store.get(selectedConversationIdAtom);
@@ -4776,7 +4785,7 @@ class XMTPStreamManager {
       }
 
       try {
-        await this.client.conversations.syncAll([ConsentState.Allowed]);
+        await this.syncAllWithMlsFallback([ConsentState.Allowed], 'periodic-sync');
       } catch (error) {
         console.error('[StreamManager] Periodic history sync error:', error);
         this.checkForDatabaseCorruption(error);
