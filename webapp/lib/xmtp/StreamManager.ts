@@ -1252,123 +1252,133 @@ class XMTPStreamManager {
       );
       console.log('[StreamManager] conversations.list() returned', localConversations.length, 'conversations');
 
-      const cacheLoadConversations: Conversation[] = [];
       const hasCachedMetadata = cachedMetadata && cachedMetadata.size > 0;
+      const allConvIds: string[] = [];
 
-      // PHASE 1: Store conversation objects and set placeholder metadata
-      // ONLY for conversations that don't already have cached metadata.
-      // This preserves the instant Phase 0 display.
+      // PHASE 1: Store ALL conversations with sync metadata (zero async calls).
+      // Use sync SDK 7.0 properties for instant data. list() already returns sorted by lastMessage.
       for (const conv of localConversations) {
         const isConvDm = isDm(conv);
 
         if (!isConvDm) {
           try {
-            const groupConv = conv as Group;
-            void groupConv.name; // Test if MLS group is accessible
+            void (conv as Group).name;
           } catch (error) {
-            if (isMlsGroupNotFoundError(error)) {
-              continue;
-            }
+            if (isMlsGroupNotFoundError(error)) continue;
           }
         }
 
-        // Always store the conversation object (needed for SDK calls later)
         this.conversations.set(conv.id, conv);
 
-        // Only create placeholder metadata if we don't already have cached metadata
+        // If we already have cached metadata, preserve it
         if (!this.conversationMetadata.has(conv.id)) {
+          // Build metadata from sync properties only (zero worker round-trips)
           let groupName: string | undefined;
           let groupImageUrl: string | undefined;
-          if (!isConvDm) {
+          let syncConsentState: 'allowed' | 'denied' | 'unknown' = 'unknown';
+          let syncPeerInboxId = '';
+
+          try {
+            const raw = conv.consentState() as unknown;
+            if (raw === ConsentState.Allowed) syncConsentState = 'allowed';
+            else if (raw === ConsentState.Denied) syncConsentState = 'denied';
+          } catch { /* skip */ }
+
+          if (isConvDm) {
             try {
-              const groupConv = conv as Group;
-              groupName = groupConv.name;
-              groupImageUrl = groupConv.imageUrl;
-            } catch {
-              // ignore
-            }
+              const pid = (conv as unknown as { dmPeerInboxId?: () => string }).dmPeerInboxId?.();
+              if (pid) {
+                syncPeerInboxId = pid;
+              }
+            } catch { /* skip */ }
+          } else {
+            try {
+              const g = conv as Group;
+              groupName = g.name;
+              groupImageUrl = g.imageUrl;
+            } catch { /* skip */ }
           }
+
           this.conversationMetadata.set(conv.id, {
             id: conv.id,
             conversationType: isConvDm ? 'dm' : 'group',
-            peerAddress: '',
-            peerInboxId: '',
-            groupName: isConvDm ? undefined : groupName,
-            groupImageUrl: isConvDm ? undefined : groupImageUrl,
+            peerAddress: this.memberAddressCache.get(syncPeerInboxId) || '',
+            peerInboxId: syncPeerInboxId,
+            groupName,
+            groupImageUrl,
             memberCount: undefined,
             memberPreviews: undefined,
-            lastMessagePreview: '',
-            lastActivityNs: BigInt(0),
+            lastMessagePreview: '', // Filled in Phase 2
+            lastActivityNs: conv.createdAtNs ?? BigInt(0),
             unreadCount: 0,
-            consentState: 'unknown',
+            consentState: syncConsentState,
             disappearingMessagesEnabled: false,
           });
         }
 
-        cacheLoadConversations.push(conv);
+        allConvIds.push(conv.id);
       }
 
-      const hasCachedConversations = cacheLoadConversations.length > 0;
+      const hasCachedConversations = allConvIds.length > 0;
 
-      // Only update the conversation list if we didn't already show cached ones
-      // (or if there are new conversations not in the cache)
+      // Show all conversations immediately (cached ones have previews, new ones show as placeholders)
       if (!hasCachedMetadata) {
-        const ids = cacheLoadConversations.map(c => c.id);
-        store.set(conversationIdsAtom, ids);
-        if (hasCachedConversations) {
-          store.set(isLoadingConversationsAtom, false);
-        }
-        this.incrementMetadataVersion();
-      } else {
-        store.set(isLoadingConversationsAtom, false);
+        store.set(conversationIdsAtom, allConvIds);
       }
+      store.set(isLoadingConversationsAtom, false);
+      this.incrementMetadataVersion();
 
-      // PHASE 2: Only build metadata on first load (no cache).
-      // When cache exists, skip entirely — streams handle updates.
-      if (!hasCachedMetadata) {
-        const FIRST_LOAD_COUNT = 30;
-        const METADATA_BATCH_SIZE = 5;
-        const toLoad = cacheLoadConversations.slice(0, FIRST_LOAD_COUNT);
+      // PHASE 2: Fill in previews using lastMessage() — much faster than buildConversationMetadata.
+      // Only for conversations that don't already have a preview (from cache or previous load).
+      const needsPreviews = localConversations.filter(conv => {
+        const meta = this.conversationMetadata.get(conv.id);
+        return meta && !meta.lastMessagePreview;
+      });
 
-        console.log(`[StreamManager] Phase 2 (first load): Building metadata for top ${toLoad.length} conversations`);
+      if (needsPreviews.length > 0) {
+        console.log(`[StreamManager] Phase 2: Loading previews for ${needsPreviews.length} conversations`);
+        const PREVIEW_BATCH_SIZE = 20;
 
-        // Build in small batches, showing results after EACH batch
-        for (let i = 0; i < toLoad.length; i += METADATA_BATCH_SIZE) {
-          const batch = toLoad.slice(i, i + METADATA_BATCH_SIZE);
+        for (let i = 0; i < needsPreviews.length; i += PREVIEW_BATCH_SIZE) {
+          const batch = needsPreviews.slice(i, i + PREVIEW_BATCH_SIZE);
           await Promise.all(
             batch.map(async (conv) => {
               try {
-                const metadata = await this.buildConversationMetadata(conv, false);
-                this.conversationMetadata.set(conv.id, metadata);
-              } catch (err) {
-                console.error('[StreamManager] Failed to build metadata for', conv.id, err);
-              }
+                const lastMsg = await conv.messages({ limit: BigInt(1), direction: SortDirection.Descending });
+                const msg = lastMsg[0];
+                if (msg) {
+                  const meta = this.conversationMetadata.get(conv.id);
+                  if (meta) {
+                    const content = extractMessageContent(msg);
+                    if (content) {
+                      meta.lastMessagePreview = content;
+                    }
+                    meta.lastActivityNs = msg.sentAtNs;
+                  }
+                }
+              } catch { /* skip */ }
             })
           );
-
-          // Update the visible list after each batch so conversations appear incrementally
-          const selectedId = store.get(selectedConversationIdAtom);
-          const visibleIds: string[] = [];
-          for (const conv of cacheLoadConversations) {
-            const meta = this.conversationMetadata.get(conv.id);
-            if (meta && (meta.lastMessagePreview || conv.id === selectedId)) {
-              visibleIds.push(conv.id);
-            }
-          }
-          visibleIds.sort((a, b) => {
-            const metaA = this.conversationMetadata.get(a);
-            const metaB = this.conversationMetadata.get(b);
-            if (!metaA || !metaB) return 0;
-            return Number(metaB.lastActivityNs - metaA.lastActivityNs);
-          });
-          store.set(conversationIdsAtom, visibleIds);
-          store.set(isLoadingConversationsAtom, false);
           this.incrementMetadataVersion();
         }
 
-        console.log(`[StreamManager] Phase 2 complete`);
+        // Now filter and sort with actual previews
+        const selectedId = store.get(selectedConversationIdAtom);
+        const visibleIds = allConvIds.filter(id => {
+          const meta = this.conversationMetadata.get(id);
+          return meta && (meta.lastMessagePreview || id === selectedId);
+        });
+        visibleIds.sort((a, b) => {
+          const metaA = this.conversationMetadata.get(a);
+          const metaB = this.conversationMetadata.get(b);
+          if (!metaA || !metaB) return 0;
+          return Number(metaB.lastActivityNs - metaA.lastActivityNs);
+        });
+        store.set(conversationIdsAtom, visibleIds);
+        this.incrementMetadataVersion();
+        console.log(`[StreamManager] Phase 2 complete: ${visibleIds.length} conversations with previews`);
       } else {
-        console.log(`[StreamManager] Phase 2 skipped — warm cache with ${cachedMetadata!.size} conversations`);
+        console.log(`[StreamManager] Phase 2 skipped — all conversations have cached previews`);
       }
 
       this.saveLastReadTimestamps();
